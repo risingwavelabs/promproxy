@@ -54,7 +54,7 @@ vet: ## Run go vet.
 
 .PHONY: docker-build
 docker-build: ## Build the Docker image.
-	@docker build -t $(IMAGE_REFERENCE) .
+	@docker build -t $(IMAGE_REFERENCE) . --load
 
 ##@ Testing
 .PHONY: test
