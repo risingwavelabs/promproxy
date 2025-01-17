@@ -10,8 +10,6 @@ import (
 	"path"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 )
 
 var (
@@ -28,22 +26,6 @@ func init() {
 	flag.BoolVar(&upstreamTLS, "upstream-tls", false, "use TLS for upstream connection")
 	flag.StringVar(&upstreamTLSCertDir, "upstream-tls-cert-dir", "", "directory to load certificates from")
 	flag.StringVar(&labelMatchers, "label-matchers", "", "label matchers to apply to all queries")
-}
-
-func parseMatchers(s string) ([]*labels.Matcher, error) {
-	if s == "" {
-		return nil, nil
-	}
-	expr, err := parser.ParseExpr("{" + s + "}")
-	if err != nil {
-		return nil, errors.New("invalid label matchers")
-	}
-	if expr.Type() != parser.ValueTypeVector {
-		return nil, errors.New("invalid label matchers")
-	}
-
-	vs := expr.(*parser.VectorSelector)
-	return vs.LabelMatchers, nil
 }
 
 func newProxy() (*proxy, error) {

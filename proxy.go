@@ -13,6 +13,10 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
+const (
+	extraMatchesKey = "extra-match[]"
+)
+
 type proxy struct {
 	upstreamEndpoint string
 	upstream         *http.Client
@@ -39,6 +43,14 @@ func (p *proxy) rewriteQuery(query string, labelMatchers ...*labels.Matcher) (st
 	return ast.String(), nil
 }
 
+func (p *proxy) rewriteQueryWithNamespaceAndExtraMatchers(query, namespace string, extraMatchers []*labels.Matcher) (string, error) {
+	return p.rewriteQuery(query, append(extraMatchers, &labels.Matcher{
+		Type:  labels.MatchEqual,
+		Name:  "namespace",
+		Value: namespace,
+	})...)
+}
+
 func (p *proxy) proxy(writer http.ResponseWriter, request *http.Request) {
 	resp, err := p.upstream.Do(request)
 	if err != nil {
@@ -61,23 +73,20 @@ func (p *proxy) proxyMatchTarget(path string, writer http.ResponseWriter, reques
 	}
 
 	values := getValuesFromRequest(request)
+	extraMatchers, err := getExtraMatchesFromValues(values)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if values.Has("match_target") {
-		matchTarget, err := p.rewriteQuery(values.Get("match_target"), &labels.Matcher{
-			Type:  labels.MatchEqual,
-			Name:  "namespace",
-			Value: namespace,
-		})
+		matchTarget, err := p.rewriteQueryWithNamespaceAndExtraMatchers(values.Get("match_target"), namespace, extraMatchers)
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusBadRequest)
 			return
 		}
 		values.Set("match_target", matchTarget)
 	} else {
-		values.Add("match_target", must(p.rewriteQuery("{__name__!=\"\"}", &labels.Matcher{
-			Type:  labels.MatchEqual,
-			Name:  "namespace",
-			Value: namespace,
-		})))
+		values.Add("match_target", must(p.rewriteQueryWithNamespaceAndExtraMatchers("{__name__!=\"\"}", namespace, extraMatchers)))
 	}
 
 	proxyReq, err := http.NewRequestWithContext(request.Context(), request.Method,
@@ -99,14 +108,15 @@ func (p *proxy) proxyMatches(path string, writer http.ResponseWriter, request *h
 	}
 
 	values := getValuesFromRequest(request)
+	extraMatchers, err := getExtraMatchesFromValues(values)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if values.Has("match[]") {
 		matchers := values["match[]"]
 		for i, matcher := range matchers {
-			rewrittenMatcher, err := p.rewriteQuery(matcher, &labels.Matcher{
-				Type:  labels.MatchEqual,
-				Name:  "namespace",
-				Value: namespace,
-			})
+			rewrittenMatcher, err := p.rewriteQueryWithNamespaceAndExtraMatchers(matcher, namespace, extraMatchers)
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusBadRequest)
 				return
@@ -115,11 +125,7 @@ func (p *proxy) proxyMatches(path string, writer http.ResponseWriter, request *h
 		}
 		values["match[]"] = matchers
 	} else {
-		values.Add("match[]", must(p.rewriteQuery("{__name__!=\"\"}", &labels.Matcher{
-			Type:  labels.MatchEqual,
-			Name:  "namespace",
-			Value: namespace,
-		})))
+		values.Add("match[]", must(p.rewriteQueryWithNamespaceAndExtraMatchers("{__name__!=\"\"}", namespace, extraMatchers)))
 	}
 
 	proxyReq, err := newRequest(request.Context(), request.Method, p.upstreamEndpoint+path, values)
@@ -142,6 +148,13 @@ func getValuesFromRequest(request *http.Request) url.Values {
 		return request.PostForm
 	}
 	return nil
+}
+
+func getExtraMatchesFromValues(values url.Values) ([]*labels.Matcher, error) {
+	if values.Has(extraMatchesKey) {
+		return parseMatchers(strings.Join(values[extraMatchesKey], ","))
+	}
+	return nil, nil
 }
 
 func newRequest(ctx context.Context, method string, url string, values url.Values) (*http.Request, error) {
@@ -169,11 +182,12 @@ func (p *proxy) proxyQuery(path string, writer http.ResponseWriter, request *htt
 
 	values := getValuesFromRequest(request)
 	if values.Has("query") {
-		query, err := p.rewriteQuery(values.Get("query"), &labels.Matcher{
-			Type:  labels.MatchEqual,
-			Name:  "namespace",
-			Value: namespace,
-		})
+		extraMatchers, err := getExtraMatchesFromValues(values)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		query, err := p.rewriteQueryWithNamespaceAndExtraMatchers(values.Get("query"), namespace, extraMatchers)
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusBadRequest)
 			return
