@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"text/template"
 
 	"github.com/pkg/errors"
 )
 
 var (
 	listenAddr         string
+	filterJobs         string
 	upstreamEndpoint   string
 	upstreamTLS        bool
 	upstreamTLSCertDir string
@@ -26,6 +28,7 @@ func init() {
 	flag.BoolVar(&upstreamTLS, "upstream-tls", false, "use TLS for upstream connection")
 	flag.StringVar(&upstreamTLSCertDir, "upstream-tls-cert-dir", "", "directory to load certificates from")
 	flag.StringVar(&labelMatchers, "label-matchers", "", "label matchers to apply to all queries")
+	flag.StringVar(&filterJobs, "filter-jobs", "", "regexp to filter jobs, templating variables are supported (namespace)")
 }
 
 func newProxy() (*proxy, error) {
@@ -59,10 +62,19 @@ func newProxy() (*proxy, error) {
 		}
 	}
 
+	var filterJobsTpl *template.Template
+	if filterJobs != "" {
+		filterJobsTpl, err = template.New("filter-jobs").Parse(filterJobs)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to parse filter jobs template")
+		}
+	}
+
 	return &proxy{
 		upstreamEndpoint: upstreamEndpoint,
 		upstream:         &client,
 		labelMatchers:    lm,
+		filterJobs:       filterJobsTpl,
 	}, nil
 }
 

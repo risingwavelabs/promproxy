@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"text/template"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -22,6 +23,7 @@ type proxy struct {
 	upstream         *http.Client
 
 	labelMatchers []*labels.Matcher
+	filterJobs    *template.Template
 }
 
 func (p *proxy) rewriteQuery(query string, labelMatchers ...*labels.Matcher) (string, error) {
@@ -44,6 +46,19 @@ func (p *proxy) rewriteQuery(query string, labelMatchers ...*labels.Matcher) (st
 }
 
 func (p *proxy) rewriteQueryWithNamespaceAndExtraMatchers(query, namespace string, extraMatchers []*labels.Matcher) (string, error) {
+	if p.filterJobs != nil {
+		sb := strings.Builder{}
+		err := p.filterJobs.Execute(&sb, map[string]string{"Namespace": namespace})
+		if err != nil {
+			return "", errors.Wrap(err, "failed to execute filter jobs template")
+		}
+		extraMatchers = append(extraMatchers, &labels.Matcher{
+			Type:  labels.MatchRegexp,
+			Name:  "job",
+			Value: sb.String(),
+		})
+	}
+
 	return p.rewriteQuery(query, append(extraMatchers, &labels.Matcher{
 		Type:  labels.MatchEqual,
 		Name:  "namespace",
