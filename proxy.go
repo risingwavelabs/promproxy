@@ -67,6 +67,18 @@ func (p *proxy) rewriteQueryWithNamespaceAndExtraMatchers(query, namespace strin
 }
 
 func (p *proxy) proxy(writer http.ResponseWriter, request *http.Request) {
+	path := strings.TrimPrefix(request.URL.Path, "/"+request.PathValue("namespace"))
+	req, err := http.NewRequestWithContext(request.Context(), request.Method, p.upstreamEndpoint+path, request.Body)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	req.Header = request.Header
+
+	p.do(writer, req)
+}
+
+func (p *proxy) do(writer http.ResponseWriter, request *http.Request) {
 	resp, err := p.upstream.Do(request)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
@@ -112,10 +124,10 @@ func (p *proxy) proxyMatchTarget(path string, writer http.ResponseWriter, reques
 	}
 	proxyReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	p.proxy(writer, proxyReq)
+	p.do(writer, proxyReq)
 }
 
-func (p *proxy) proxyMatches(path string, writer http.ResponseWriter, request *http.Request) {
+func (p *proxy) proxyMatchesSeriesSelector(path string, writer http.ResponseWriter, request *http.Request) {
 	namespace := request.PathValue("namespace")
 	if namespace == "" {
 		http.Error(writer, "namespace not provided", http.StatusBadRequest)
@@ -149,7 +161,7 @@ func (p *proxy) proxyMatches(path string, writer http.ResponseWriter, request *h
 		return
 	}
 
-	p.proxy(writer, proxyReq)
+	p.do(writer, proxyReq)
 }
 
 func getValuesFromRequest(request *http.Request) url.Values {
@@ -216,11 +228,16 @@ func (p *proxy) proxyQuery(path string, writer http.ResponseWriter, request *htt
 		return
 	}
 
-	p.proxy(writer, proxyReq)
+	p.do(writer, proxyReq)
 }
 
 func newHttpMux(p *proxy) http.Handler {
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("/-/healthy", func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+	})
+
 	mux.HandleFunc("/{namespace}/api/v1/query", func(writer http.ResponseWriter, request *http.Request) {
 		p.proxyQuery("/api/v1/query", writer, request)
 	})
@@ -230,36 +247,42 @@ func newHttpMux(p *proxy) http.Handler {
 	mux.HandleFunc("/{namespace}/api/v1/format_query", p.proxy)
 	mux.HandleFunc("/{namespace}/api/v1/parse_query", p.proxy)
 	mux.HandleFunc("/{namespace}/api/v1/series", func(writer http.ResponseWriter, request *http.Request) {
-		p.proxyMatches("/api/v1/series", writer, request)
+		p.proxyMatchesSeriesSelector("/api/v1/series", writer, request)
 	})
 	mux.HandleFunc("/{namespace}/api/v1/labels", func(writer http.ResponseWriter, request *http.Request) {
-		p.proxyMatches("/api/v1/labels", writer, request)
+		p.proxyMatchesSeriesSelector("/api/v1/labels", writer, request)
 	})
 	mux.HandleFunc("/{namespace}/api/v1/label/{name}/values", func(writer http.ResponseWriter, request *http.Request) {
 		name := request.PathValue("name")
-		p.proxyMatches("/api/v1/label/"+name+"/values", writer, request)
+		p.proxyMatchesSeriesSelector("/api/v1/label/"+name+"/values", writer, request)
 	})
 	mux.HandleFunc("/{namespace}/api/v1/query_exemplars", func(writer http.ResponseWriter, request *http.Request) {
 		p.proxyQuery("/api/v1/query_exemplars", writer, request)
 	})
-	mux.HandleFunc("/{namespace}/api/v1/targets", p.proxy)
-	mux.HandleFunc("/{namespace}/api/v1/rules", func(writer http.ResponseWriter, request *http.Request) {
-		p.proxyMatches("/api/v1/rules", writer, request)
-	})
-	mux.HandleFunc("/{namespace}/api/v1/alerts", p.proxy)
 	mux.HandleFunc("/{namespace}/api/v1/targets/metadata", func(writer http.ResponseWriter, request *http.Request) {
 		p.proxyMatchTarget("/api/v1/targets/metadata", writer, request)
 	})
 	mux.HandleFunc("/{namespace}/api/v1/metadata", p.proxy)
-	mux.HandleFunc("/{namespace}/api/v1/alertmanagers", p.proxy)
-	mux.HandleFunc("/{namespace}/api/v1/status/config", p.proxy)
-	mux.HandleFunc("/{namespace}/api/v1/status/flags", p.proxy)
-	mux.HandleFunc("/{namespace}/api/v1/status/runtimeinfo", p.proxy)
-	mux.HandleFunc("/{namespace}/api/v1/status/buildinfo", p.proxy)
-	mux.HandleFunc("/{namespace}/api/v1/status/tsdb", p.proxy)
-	mux.HandleFunc("/{namespace}/api/v1/status/walreplay", p.proxy)
-	mux.HandleFunc("/{namespace}/api/v1/notifications", p.proxy)
-	mux.HandleFunc("/{namespace}/api/v1/notifications/live", p.proxy)
+	mux.HandleFunc("/{namespace}/api/v1/rules", func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = writer.Write([]byte(`{"status":"success","data":{"groups":[]}}`))
+	})
+
+	// The following routes are not implemented in the proxy.
+	// --------------------------------------------------------
+	//
+	// mux.HandleFunc("/{namespace}/api/v1/targets", p.proxy)
+	// mux.HandleFunc("/{namespace}/api/v1/status/buildinfo", p.proxy)
+	// mux.HandleFunc("/{namespace}/api/v1/status/runtimeinfo", p.proxy)
+	// mux.HandleFunc("/{namespace}/api/v1/alertmanagers", p.proxy)
+	// mux.HandleFunc("/{namespace}/api/v1/status/config", p.proxy)
+	// mux.HandleFunc("/{namespace}/api/v1/status/flags", p.proxy)
+	// mux.HandleFunc("/{namespace}/api/v1/alerts", p.proxy)
+	// mux.HandleFunc("/{namespace}/api/v1/status/tsdb", p.proxy)
+	// mux.HandleFunc("/{namespace}/api/v1/status/walreplay", p.proxy)
+	// mux.HandleFunc("/{namespace}/api/v1/notifications", p.proxy)
+	// mux.HandleFunc("/{namespace}/api/v1/notifications/live", p.proxy)
+	//
+	// --------------------------------------------------------
 
 	return mux
 }

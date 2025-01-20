@@ -20,6 +20,7 @@ var (
 	upstreamTLS        bool
 	upstreamTLSCertDir string
 	labelMatchers      string
+	printAccessLog     bool
 )
 
 func init() {
@@ -29,6 +30,7 @@ func init() {
 	flag.StringVar(&upstreamTLSCertDir, "upstream-tls-cert-dir", "", "directory to load certificates from")
 	flag.StringVar(&labelMatchers, "label-matchers", "", "label matchers to apply to all queries")
 	flag.StringVar(&filterJobs, "filter-jobs", "", "regexp to filter jobs, templating variables are supported (namespace)")
+	flag.BoolVar(&printAccessLog, "print-access-log", false, "print access log")
 }
 
 func newProxy() (*proxy, error) {
@@ -88,7 +90,11 @@ func main() {
 	}
 
 	fmt.Println("starting server on", listenAddr)
-	err = http.ListenAndServe(listenAddr, newHttpMux(p))
+	handler := newHttpMux(p)
+	if printAccessLog {
+		handler = logHttpHandler(handler)
+	}
+	err = http.ListenAndServe(listenAddr, handler)
 	if err != nil {
 		fmt.Println("failed to start server:", err)
 		os.Exit(1)
