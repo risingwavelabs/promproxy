@@ -90,13 +90,18 @@ func (p *proxy) do(writer http.ResponseWriter, request *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	writer.WriteHeader(resp.StatusCode)
 	for key, values := range resp.Header {
 		for _, value := range values {
 			writer.Header().Add(key, value)
 		}
 	}
-	_, _ = io.Copy(writer, resp.Body)
+	writer.WriteHeader(resp.StatusCode)
+
+	_, err = io.Copy(writer, resp.Body)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (p *proxy) proxyMatchTarget(path string, writer http.ResponseWriter, request *http.Request) {
