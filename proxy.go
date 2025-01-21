@@ -196,15 +196,15 @@ func newRequest(ctx context.Context, method string, url string, header http.Head
 		if err != nil {
 			return nil, err
 		}
-		r.Header["Accept-Encoding"] = header["Accept-Encoding"]
+		r.Header = header.Clone()
 		return r, nil
 	case http.MethodPost:
 		r, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(values.Encode()))
 		if err != nil {
 			return nil, err
 		}
-		r.Header["Accept-Encoding"] = header["Accept-Encoding"]
-		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header = header.Clone()
+		r.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
 		return r, nil
 	default:
 		panic("unsupported method")
