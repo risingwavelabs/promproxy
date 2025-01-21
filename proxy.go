@@ -14,6 +14,10 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
+func init() {
+	parser.EnableExperimentalFunctions = true
+}
+
 const (
 	extraMatchesKey = "extra-match[]"
 )
