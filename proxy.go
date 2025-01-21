@@ -91,8 +91,11 @@ func (p *proxy) do(writer http.ResponseWriter, request *http.Request) {
 	defer resp.Body.Close()
 
 	writer.WriteHeader(resp.StatusCode)
-	writer.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-	writer.Header().Set("Content-Length", resp.Header.Get("Content-Length"))
+	for key, values := range resp.Header {
+		for _, value := range values {
+			writer.Header().Add(key, value)
+		}
+	}
 	_, _ = io.Copy(writer, resp.Body)
 }
 
@@ -120,13 +123,11 @@ func (p *proxy) proxyMatchTarget(path string, writer http.ResponseWriter, reques
 		values.Add("match_target", must(p.rewriteQueryWithNamespaceAndExtraMatchers("{__name__!=\"\"}", namespace, extraMatchers)))
 	}
 
-	proxyReq, err := http.NewRequestWithContext(request.Context(), request.Method,
-		p.upstreamEndpoint+path, strings.NewReader(values.Encode()))
+	proxyReq, err := newRequest(request.Context(), request.Method, p.upstreamEndpoint+path, request.Header, values)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	proxyReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	p.do(writer, proxyReq)
 }
@@ -159,7 +160,7 @@ func (p *proxy) proxyMatchesSeriesSelector(path string, writer http.ResponseWrit
 		values.Add("match[]", must(p.rewriteQueryWithNamespaceAndExtraMatchers("{__name__!=\"\"}", namespace, extraMatchers)))
 	}
 
-	proxyReq, err := newRequest(request.Context(), request.Method, p.upstreamEndpoint+path, values)
+	proxyReq, err := newRequest(request.Context(), request.Method, p.upstreamEndpoint+path, request.Header, values)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
@@ -188,17 +189,23 @@ func getExtraMatchesFromValues(values url.Values) ([]*labels.Matcher, error) {
 	return nil, nil
 }
 
-func newRequest(ctx context.Context, method string, url string, values url.Values) (*http.Request, error) {
+func newRequest(ctx context.Context, method string, url string, header http.Header, values url.Values) (*http.Request, error) {
 	switch method {
 	case http.MethodGet:
-		return http.NewRequestWithContext(ctx, method, url+"?"+values.Encode(), nil)
-	case http.MethodPost:
-		req, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(values.Encode()))
+		r, err := http.NewRequestWithContext(ctx, method, url+"?"+values.Encode(), nil)
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		return req, nil
+		r.Header["Accept-Encoding"] = header["Accept-Encoding"]
+		return r, nil
+	case http.MethodPost:
+		r, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(values.Encode()))
+		if err != nil {
+			return nil, err
+		}
+		r.Header["Accept-Encoding"] = header["Accept-Encoding"]
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return r, nil
 	default:
 		panic("unsupported method")
 	}
@@ -226,7 +233,7 @@ func (p *proxy) proxyQuery(path string, writer http.ResponseWriter, request *htt
 		values.Set("query", query)
 	}
 
-	proxyReq, err := newRequest(request.Context(), request.Method, p.upstreamEndpoint+path, values)
+	proxyReq, err := newRequest(request.Context(), request.Method, p.upstreamEndpoint+path, request.Header, values)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
