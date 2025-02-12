@@ -1,0 +1,180 @@
+package proxy
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/prometheus/prometheus/model/labels"
+)
+
+// handler is an HTTP handler that proxies a specific request to a Prometheus instance.
+type handler struct {
+	upstreamEndpoint string
+	upstream         *http.Client
+	labelMatchers    []*labels.Matcher
+}
+
+func (h *handler) httpDo(w http.ResponseWriter, req *http.Request) {
+	// Proxy the request to the upstream Prometheus instance.
+	resp, err := h.upstream.Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy the response headers and status code.
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+
+	// Write header with the status code first before copying the body.
+	w.WriteHeader(resp.StatusCode)
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+}
+
+func (h *handler) getValuesFromRequest(r *http.Request) url.Values {
+	switch r.Method {
+	case http.MethodGet:
+		return r.URL.Query()
+	case http.MethodPost:
+		if err := r.ParseForm(); err != nil {
+			return nil
+		}
+		return r.PostForm
+	}
+	return nil
+}
+
+func (h *handler) newRequest(ctx context.Context, method string, url string, header http.Header, values url.Values) (*http.Request, error) {
+	switch method {
+	case http.MethodGet:
+		r, err := http.NewRequestWithContext(ctx, method, url+"?"+values.Encode(), nil)
+		if err != nil {
+			return nil, err
+		}
+		r.Header = header.Clone()
+		return r, nil
+	case http.MethodPost:
+		r, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(values.Encode()))
+		if err != nil {
+			return nil, err
+		}
+		r.Header = header.Clone()
+		r.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
+		return r, nil
+	default:
+		panic("unsupported method")
+	}
+}
+
+func (h *handler) proxyQuery(path string, w http.ResponseWriter, r *http.Request) {
+	values := h.getValuesFromRequest(r)
+
+	if !values.Has("query") {
+		http.Error(w, "query not provided", http.StatusBadRequest)
+		return
+	}
+
+	// Rewrite the query with the label matchers.
+	query := values.Get("query")
+	rewrittenQuery, err := RewriteQuery(query, h.labelMatchers)
+	if err != nil {
+		http.Error(w, "invalid query: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Overwrite the query with the rewritten query.
+	values.Set("query", rewrittenQuery)
+
+	// Construct a new request with the rewritten query.
+	proxyReq, err := h.newRequest(
+		r.Context(),
+		r.Method,
+		h.upstreamEndpoint+path,
+		r.Header,
+		values,
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.httpDo(w, proxyReq)
+}
+
+func (h *handler) proxy(w http.ResponseWriter, r *http.Request) {
+	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, h.upstreamEndpoint+r.URL.Path, r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	proxyReq.Header = r.Header
+	h.httpDo(w, proxyReq)
+}
+
+func (h *handler) proxyMatchesSeriesSelector(path string, w http.ResponseWriter, r *http.Request) {
+	values := h.getValuesFromRequest(r)
+
+	// Rewrite the match[] query parameter with the label matchers.
+	if values.Has("match[]") {
+		matchers := values["match[]"]
+		for i, matcher := range matchers {
+			rewrittenMatcher, err := RewriteQuery(matcher, h.labelMatchers)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			matchers[i] = rewrittenMatcher
+		}
+		values["match[]"] = matchers
+	} else {
+		values.Add("match[]", GetMatchExpr(h.labelMatchers))
+	}
+
+	// Construct a new request with the rewritten matchers.
+	proxyReq, err := h.newRequest(r.Context(), r.Method, h.upstreamEndpoint+path, r.Header, values)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.httpDo(w, proxyReq)
+}
+
+func (h *handler) proxyMatchTarget(path string, w http.ResponseWriter, r *http.Request) {
+	values := h.getValuesFromRequest(r)
+
+	// Rewrite the match_target query parameter with the label matchers.
+	if values.Has("match_target") {
+		matchTarget, err := RewriteQuery(values.Get("match_target"), h.labelMatchers)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		values.Set("match_target", matchTarget)
+	} else {
+		values.Add("match_target", GetMatchExpr(h.labelMatchers))
+	}
+
+	// Construct a new request with the rewritten match_target.
+	proxyReq, err := h.newRequest(r.Context(), r.Method, h.upstreamEndpoint+path, r.Header, values)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.httpDo(w, proxyReq)
+}
+
+func (h *handler) proxyRules(w http.ResponseWriter, r *http.Request) {
+	_, _ = w.Write([]byte(`{"status":"success","data":{"groups":[]}}`))
+}

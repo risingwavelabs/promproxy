@@ -1,19 +1,25 @@
-package main
+package proxy
 
 import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-
 	"github.com/stretchr/testify/assert"
 )
+
+func must[T any](t T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
 
 func mustCanonicalizeQuery(s string) string {
 	return must(parser.ParseExpr(s)).String()
 }
 
-func TestProxyRewriteQuery(t *testing.T) {
+func TestRewriteQuery(t *testing.T) {
 	testcases := map[string]struct {
 		query         string
 		labelMatchers []*labels.Matcher
@@ -61,8 +67,7 @@ func TestProxyRewriteQuery(t *testing.T) {
 
 	for name, tc := range testcases {
 		t.Run(name, func(t *testing.T) {
-			p := &proxy{}
-			got, err := p.rewriteQuery(tc.query, tc.labelMatchers...)
+			got, err := RewriteQuery(tc.query, tc.labelMatchers)
 			if assert.NoErrorf(t, err, "unexpected error: %s") {
 				assert.Equal(t, mustCanonicalizeQuery(tc.expected), got)
 			}

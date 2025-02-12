@@ -11,13 +11,6 @@ import (
 	"github.com/urfave/negroni"
 )
 
-func must[T any](t T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return t
-}
-
 func parseMatchers(s string) ([]*labels.Matcher, error) {
 	if s == "" {
 		return nil, nil
