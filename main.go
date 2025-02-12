@@ -29,12 +29,12 @@ var (
 
 func init() {
 	flag.StringVar(&listenAddr, "listen-addr", ":8080", "address to listen on")
-	flag.StringVar(&upstreamEndpoint, "upstream-endpoint", "", "upstream Prometheus endpoint")
+	flag.StringVar(&upstreamEndpoint, "upstream-endpoint", "http://localhost:9090", "upstream Prometheus endpoint")
 	flag.BoolVar(&upstreamTLS, "upstream-tls", false, "use TLS for upstream connection")
 	flag.StringVar(&upstreamTLSCertDir, "upstream-tls-cert-dir", "", "directory to load certificates from")
 	flag.StringVar(&labelMatchers, "label-matchers", "", "label matchers to apply to all queries")
 	flag.BoolVar(&printAccessLog, "print-access-log", false, "print access log")
-	flag.StringVar(&isolationKeys, "isolation-keys", "", "keys to isolate on, separated by commas")
+	flag.StringVar(&isolationKeys, "isolation-keys", "namespace", "keys to isolate on, separated by commas")
 }
 
 func newProxy() (*proxy.Proxy, error) {
