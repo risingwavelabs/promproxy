@@ -15,8 +15,8 @@ const handlerKey = "handler"
 type handlerContextHandler func(*handler, http.ResponseWriter, *http.Request)
 
 func wrapHandler(h handlerContextHandler) http.HandlerFunc {
-	return func(writer http.ResponseWriter, request *http.Request) {
-		h(request.Context().Value(handlerKey).(*handler), writer, request)
+	return func(w http.ResponseWriter, r *http.Request) {
+		h(r.Context().Value(handlerKey).(*handler), w, r)
 	}
 }
 
@@ -84,49 +84,32 @@ func (p *Proxy) registerHandlers() {
 	p.mux.HandleFunc("/"+strings.Join(keysPaths, "/")+"/", p.handleKeys)
 
 	// Set up the sub mux for the Prometheus API.
-	p.subMux.HandleFunc("/api/v1/query", wrapHandler(func(h *handler, w http.ResponseWriter, r *http.Request) {
-		h.proxyQuery("/api/v1/query", w, r)
-	}))
-	p.subMux.HandleFunc("/api/v1/query_range", wrapHandler(func(h *handler, w http.ResponseWriter, r *http.Request) {
-		h.proxyQuery("/api/v1/query_range", w, r)
-	}))
-	p.subMux.HandleFunc("/api/v1/query_exemplars", wrapHandler(func(h *handler, w http.ResponseWriter, r *http.Request) {
-		h.proxyQuery("/api/v1/query_exemplars", w, r)
-	}))
-	p.subMux.HandleFunc("/api/v1/format_query", wrapHandler((*handler).proxy))
-	p.subMux.HandleFunc("/api/v1/parse_query", wrapHandler((*handler).proxy))
-	p.subMux.HandleFunc("/api/v1/series", wrapHandler(func(h *handler, w http.ResponseWriter, r *http.Request) {
-		h.proxyMatchesSeriesSelector("/api/v1/series", w, r)
-	}))
-	p.subMux.HandleFunc("/api/v1/labels", wrapHandler(func(h *handler, w http.ResponseWriter, r *http.Request) {
-		h.proxyMatchesSeriesSelector("/api/v1/labels", w, r)
-	}))
-	p.subMux.HandleFunc("/api/v1/label/{name}/values", wrapHandler(func(h *handler, w http.ResponseWriter, r *http.Request) {
-		name := r.PathValue("name")
-		h.proxyMatchesSeriesSelector(fmt.Sprintf("/api/v1/label/%s/values", name), w, r)
-	}))
-	p.subMux.HandleFunc("/api/v1/metadata", wrapHandler(func(h *handler, w http.ResponseWriter, r *http.Request) {
-		h.proxyMatchTarget("/api/v1/metadata", w, r)
-	}))
-	p.subMux.HandleFunc("/api/v1/rules", wrapHandler((*handler).proxy))
+	p.subMux.HandleFunc("/api/v1/query", wrapHandler((*handler).proxyQuery))
+	p.subMux.HandleFunc("/api/v1/query_range", wrapHandler((*handler).proxyQuery))
+	p.subMux.HandleFunc("/api/v1/query_exemplars", wrapHandler((*handler).proxyQuery))
+	p.subMux.HandleFunc("/api/v1/series", wrapHandler((*handler).proxyMatchesSeriesSelector))
+	p.subMux.HandleFunc("/api/v1/labels", wrapHandler((*handler).proxyMatchesSeriesSelector))
+	p.subMux.HandleFunc("/api/v1/label/{name}/values", wrapHandler((*handler).proxyMatchesSeriesSelector))
+	p.subMux.HandleFunc("/api/v1/rules", wrapHandler((*handler).proxyRules))
 
 	// The following routes are not implemented in the proxy.
 	// --------------------------------------------------------
 	//
-	// p.subMux.HandleFunc("/api/v1/targets/metadata", wrapHandler(func(h *handler, w http.ResponseWriter, r *http.Request) {
-	// 	h.proxyMatchTarget("/api/v1/targets/metadata", w, r)
-	// }))
-	// p.subMux.HandleFunc("/{namespace}/api/v1/targets", p.proxy)
-	// p.subMux.HandleFunc("/{namespace}/api/v1/status/buildinfo", p.proxy)
-	// p.subMux.HandleFunc("/{namespace}/api/v1/status/runtimeinfo", p.proxy)
-	// p.subMux.HandleFunc("/{namespace}/api/v1/alertmanagers", p.proxy)
-	// p.subMux.HandleFunc("/{namespace}/api/v1/status/config", p.proxy)
-	// p.subMux.HandleFunc("/{namespace}/api/v1/status/flags", p.proxy)
-	// p.subMux.HandleFunc("/{namespace}/api/v1/alerts", p.proxy)
-	// p.subMux.HandleFunc("/{namespace}/api/v1/status/tsdb", p.proxy)
-	// p.subMux.HandleFunc("/{namespace}/api/v1/status/walreplay", p.proxy)
-	// p.subMux.HandleFunc("/{namespace}/api/v1/notifications", p.proxy)
-	// p.subMux.HandleFunc("/{namespace}/api/v1/notifications/live", p.proxy)
+	// p.subMux.HandleFunc("/api/v1/metadata", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/api/v1/targets/metadata", wrapHandler((*handler).proxyMatchTarget))
+	// p.subMux.HandleFunc("/api/v1/format_query", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/api/v1/parse_query", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/targets", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/status/buildinfo", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/status/runtimeinfo", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/alertmanagers", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/status/config", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/status/flags", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/alerts", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/status/tsdb", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/status/walreplay", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/notifications", wrapHandler((*handler).proxy))
+	// p.subMux.HandleFunc("/{namespace}/api/v1/notifications/live", wrapHandler((*handler).proxy))
 	//
 	// --------------------------------------------------------
 }
@@ -136,8 +119,20 @@ func (p *Proxy) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	p.mux.ServeHTTP(writer, request)
 }
 
-// NewProxy creates a new Proxy.
+// NewProxy creates a new Proxy. Arguments explained:
+//   - The upstreamEndpoint is the URL of the upstream Prometheus instance.
+//   - The upstreamClient is used to proxy requests to the upstream Prometheus instance.
+//   - The keys are used to provide virtual sub-routes for the proxy.
+//     For example, if the keys are ["namespace", "pod"],
+//     and the request path is "/{namespace}/{pod}/api/v1/query", the key-values will be ["{namespace}", "{pod}"].
+//     The key-values are then converted to label matchers and appended to the label matchers provided in the configuration.
+//     In this example, the label matchers will be {namespace="{namespace}", pod="{pod}"}.
+//   - The labelMatchers are the label matchers to apply to all queries.
 func NewProxy(upstreamEndpoint string, upstreamClient *http.Client, keys []string, labelMatchers []*labels.Matcher) *Proxy {
+	if len(keys) == 0 {
+		panic("no keys provided")
+	}
+
 	p := &Proxy{
 		mux:    http.NewServeMux(),
 		subMux: http.NewServeMux(),

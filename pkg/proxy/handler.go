@@ -77,7 +77,7 @@ func (h *handler) newRequest(ctx context.Context, method string, url string, hea
 	}
 }
 
-func (h *handler) proxyQuery(path string, w http.ResponseWriter, r *http.Request) {
+func (h *handler) proxyQuery(w http.ResponseWriter, r *http.Request) {
 	values := h.getValuesFromRequest(r)
 
 	if !values.Has("query") {
@@ -100,7 +100,7 @@ func (h *handler) proxyQuery(path string, w http.ResponseWriter, r *http.Request
 	proxyReq, err := h.newRequest(
 		r.Context(),
 		r.Method,
-		h.upstreamEndpoint+path,
+		h.upstreamEndpoint+r.URL.Path,
 		r.Header,
 		values,
 	)
@@ -121,7 +121,7 @@ func (h *handler) proxy(w http.ResponseWriter, r *http.Request) {
 	h.httpDo(w, proxyReq)
 }
 
-func (h *handler) proxyMatchesSeriesSelector(path string, w http.ResponseWriter, r *http.Request) {
+func (h *handler) proxyMatchesSeriesSelector(w http.ResponseWriter, r *http.Request) {
 	values := h.getValuesFromRequest(r)
 
 	// Rewrite the match[] query parameter with the label matchers.
@@ -141,7 +141,7 @@ func (h *handler) proxyMatchesSeriesSelector(path string, w http.ResponseWriter,
 	}
 
 	// Construct a new request with the rewritten matchers.
-	proxyReq, err := h.newRequest(r.Context(), r.Method, h.upstreamEndpoint+path, r.Header, values)
+	proxyReq, err := h.newRequest(r.Context(), r.Method, h.upstreamEndpoint+r.URL.Path, r.Header, values)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -150,7 +150,7 @@ func (h *handler) proxyMatchesSeriesSelector(path string, w http.ResponseWriter,
 	h.httpDo(w, proxyReq)
 }
 
-func (h *handler) proxyMatchTarget(path string, w http.ResponseWriter, r *http.Request) {
+func (h *handler) proxyMatchTarget(w http.ResponseWriter, r *http.Request) {
 	values := h.getValuesFromRequest(r)
 
 	// Rewrite the match_target query parameter with the label matchers.
@@ -166,7 +166,7 @@ func (h *handler) proxyMatchTarget(path string, w http.ResponseWriter, r *http.R
 	}
 
 	// Construct a new request with the rewritten match_target.
-	proxyReq, err := h.newRequest(r.Context(), r.Method, h.upstreamEndpoint+path, r.Header, values)
+	proxyReq, err := h.newRequest(r.Context(), r.Method, h.upstreamEndpoint+r.URL.Path, r.Header, values)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -176,5 +176,6 @@ func (h *handler) proxyMatchTarget(path string, w http.ResponseWriter, r *http.R
 }
 
 func (h *handler) proxyRules(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"status":"success","data":{"groups":[]}}`))
 }

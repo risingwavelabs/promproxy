@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,7 +15,7 @@ func must[T any](t T, err error) T {
 }
 
 func mustCanonicalizeQuery(s string) string {
-	return must(parser.ParseExpr(s)).String()
+	return must(FormatQuery(s))
 }
 
 func TestRewriteQuery(t *testing.T) {
