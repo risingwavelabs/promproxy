@@ -34,6 +34,28 @@ type Proxy struct {
 	labelMatchers    []*labels.Matcher
 }
 
+func (p *Proxy) keysPrefix() string {
+	if len(p.keys) == 0 {
+		return ""
+	}
+	keysPaths := slices.Collect(func(yield func(string) bool) {
+		for _, key := range p.keys {
+			transformedKey := fmt.Sprintf("{%s}", key)
+			if !yield(transformedKey) {
+				return
+			}
+		}
+	})
+	return "/" + strings.Join(keysPaths, "/")
+}
+
+func (p *Proxy) valuesPrefix(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return "/" + strings.Join(values, "/")
+}
+
 func (p *Proxy) handleKeys(writer http.ResponseWriter, request *http.Request) {
 	// Extract keys from the request path.
 	values := make([]string, len(p.keys))
@@ -54,7 +76,7 @@ func (p *Proxy) handleKeys(writer http.ResponseWriter, request *http.Request) {
 		labelMatchers:    append(p.labelMatchers, matchers...),
 	}
 
-	http.StripPrefix("/"+strings.Join(values, "/"), p.subMux).ServeHTTP(
+	http.StripPrefix(p.valuesPrefix(values), p.subMux).ServeHTTP(
 		writer,
 		// Set the handler in the request context.
 		request.WithContext(context.WithValue(request.Context(), handlerKey, h)),
@@ -66,22 +88,9 @@ func (p *Proxy) handleHealthy(writer http.ResponseWriter, _ *http.Request) {
 }
 
 func (p *Proxy) registerHandlers() {
-	// Collect the keys from the configuration.
-	keysPaths := slices.Collect(func(yield func(string) bool) {
-		for _, key := range p.keys {
-			transformedKey := fmt.Sprintf("{%s}", key)
-			if !yield(transformedKey) {
-				return
-			}
-		}
-	})
-
 	// Set up the root mux for key handling.
 	p.mux.HandleFunc("/-/healthy", p.handleHealthy)
-	p.mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	})
-	p.mux.HandleFunc("/"+strings.Join(keysPaths, "/")+"/", p.handleKeys)
+	p.mux.HandleFunc(p.keysPrefix()+"/", p.handleKeys)
 
 	// Set up the sub mux for the Prometheus API.
 	p.subMux.HandleFunc("/api/v1/query", wrapHandler((*handler).proxyQuery))
@@ -127,12 +136,9 @@ func (p *Proxy) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 //     and the request path is "/{namespace}/{pod}/api/v1/query", the key-values will be ["{namespace}", "{pod}"].
 //     The key-values are then converted to label matchers and appended to the label matchers provided in the configuration.
 //     In this example, the label matchers will be {namespace="{namespace}", pod="{pod}"}.
+//     If the keys are empty, no virtual sub-routes are provided. The proxy will only handle the root path, e.g., "/api/v1/query".
 //   - The labelMatchers are the label matchers to apply to all queries.
 func NewProxy(upstreamEndpoint string, upstreamClient *http.Client, keys []string, labelMatchers []*labels.Matcher) *Proxy {
-	if len(keys) == 0 {
-		panic("no keys provided")
-	}
-
 	p := &Proxy{
 		mux:    http.NewServeMux(),
 		subMux: http.NewServeMux(),

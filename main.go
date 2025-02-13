@@ -68,7 +68,10 @@ func newProxy() (*proxy.Proxy, error) {
 		}
 	}
 
-	keys := strings.Split(isolationKeys, ",")
+	var keys []string
+	if isolationKeys != "" {
+		keys = strings.Split(isolationKeys, ",")
+	}
 	return proxy.NewProxy(upstreamEndpoint, &client, keys, lm), nil
 }
 
