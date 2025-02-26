@@ -34,7 +34,7 @@ func init() {
 	flag.StringVar(&upstreamTLSCertDir, "upstream-tls-cert-dir", "", "directory to load certificates from")
 	flag.StringVar(&labelMatchers, "label-matchers", "", "label matchers to apply to all queries")
 	flag.BoolVar(&printAccessLog, "print-access-log", false, "print access log")
-	flag.StringVar(&isolationKeys, "isolation-keys", "namespace", "keys to isolate on, separated by commas")
+	flag.StringVar(&isolationKeys, "isolation-keys", "", "keys to isolate on, separated by commas")
 }
 
 func newProxy() (*proxy.Proxy, error) {

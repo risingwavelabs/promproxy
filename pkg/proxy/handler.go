@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -50,7 +51,9 @@ func (h *handler) getValuesFromRequest(r *http.Request) url.Values {
 		if err := r.ParseForm(); err != nil {
 			return nil
 		}
-		return r.PostForm
+		v := r.URL.Query()
+		maps.Insert(v, maps.All(r.PostForm))
+		return v
 	}
 	return nil
 }
