@@ -99,7 +99,7 @@ func (h *handler) proxyQuery(w http.ResponseWriter, r *http.Request) {
 	// Construct a new request with the rewritten query.
 	proxyReq, err := h.newRequest(
 		r.Context(),
-		r.Method,
+		http.MethodGet,
 		h.upstreamEndpoint+r.URL.Path,
 		r.Header,
 		values,
