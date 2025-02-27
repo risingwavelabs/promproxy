@@ -29,3 +29,8 @@ The proxy server can be configured using the following CLI flags:
 - `-label-matchers`: The label matchers to be used for the proxy server. (default "")
 - `-isolation-keys`: The isolation keys to be used for the proxy server. (default "")
 - `-print-access-log`: Print access log. (default false)
+
+## License
+
+This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full
+license text.
