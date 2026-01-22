@@ -80,19 +80,17 @@ func (s *oauthTokenSource) Token(ctx context.Context) (string, error) {
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	token := s.token
 	if token != nil && token.Valid() {
-		s.mu.Unlock()
 		return token.AccessToken, nil
 	}
-	s.mu.Unlock()
 
 	token, err := s.cfg.TokenSource(ctx).Token()
 	if err != nil {
 		return "", fmt.Errorf("retrieve oauth2 token: %w", err)
 	}
-	s.mu.Lock()
 	s.token = token
-	s.mu.Unlock()
 	return token.AccessToken, nil
 }
