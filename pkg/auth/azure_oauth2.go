@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
@@ -33,7 +34,9 @@ type AzureOAuth2Config struct {
 }
 
 type oauthTokenSource struct {
-	source oauth2.TokenSource
+	cfg   clientcredentials.Config
+	mu    sync.Mutex
+	token *oauth2.Token
 }
 
 // NewAzureOAuth2Source creates an OAuth2 client-credential token source.
@@ -62,19 +65,34 @@ func NewAzureOAuth2Source(cfg AzureOAuth2Config) (TokenSource, error) {
 		TokenURL:     tokenURL,
 		Scopes:       cfg.Scopes,
 	}
-	tokenSource := oauth2.ReuseTokenSource(nil, credCfg.TokenSource(context.Background()))
 
 	return &oauthTokenSource{
-		source: tokenSource,
+		cfg: credCfg,
 	}, nil
 }
 
 func (s *oauthTokenSource) Token(ctx context.Context) (string, error) {
-	_ = ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 
-	token, err := s.source.Token()
+	s.mu.Lock()
+	token := s.token
+	if token != nil && token.Valid() {
+		s.mu.Unlock()
+		return token.AccessToken, nil
+	}
+	s.mu.Unlock()
+
+	token, err := s.cfg.TokenSource(ctx).Token()
 	if err != nil {
 		return "", fmt.Errorf("retrieve oauth2 token: %w", err)
 	}
+	s.mu.Lock()
+	s.token = token
+	s.mu.Unlock()
 	return token.AccessToken, nil
 }

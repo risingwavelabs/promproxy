@@ -97,7 +97,11 @@ func NewGoogleJWTSourceFromFile(path string, cfg GoogleJWTConfig) (*GoogleJWTSou
 
 // Token returns a cached signed JWT or generates a new one if needed.
 func (s *GoogleJWTSource) Token(ctx context.Context) (string, error) {
-	_ = ctx
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

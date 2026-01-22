@@ -73,21 +73,61 @@ func init() {
 	flag.StringVar(&isolationKeys, "isolation-keys", "", "keys to isolate on, separated by commas")
 	flag.StringVar(&upstreamAuth, "upstream-auth", "", "upstream auth method: aws-sigv4, google-jwt, azure-oauth2")
 
-	flag.StringVar(&upstreamAWSRegion, "upstream-aws-region", "", "aws region for SigV4 signing")
+	flag.StringVar(&upstreamAWSRegion, "upstream-aws-region", "", "aws region for SigV4 signing (or AWS_REGION)")
 	flag.StringVar(&upstreamAWSService, "upstream-aws-service", "aps", "aws service name for SigV4 signing")
-	flag.StringVar(&upstreamAWSAccessKeyID, "upstream-aws-access-key-id", "", "aws access key id for SigV4 signing")
-	flag.StringVar(&upstreamAWSSecretAccessKey, "upstream-aws-secret-access-key", "", "aws secret access key for SigV4 signing")
-	flag.StringVar(&upstreamAWSSessionToken, "upstream-aws-session-token", "", "aws session token for SigV4 signing")
+	flag.StringVar(&upstreamAWSAccessKeyID, "upstream-aws-access-key-id", "", "aws access key id for SigV4 signing (or AWS_ACCESS_KEY_ID)")
+	flag.StringVar(&upstreamAWSSecretAccessKey, "upstream-aws-secret-access-key", "", "aws secret access key for SigV4 signing (or AWS_SECRET_ACCESS_KEY)")
+	flag.StringVar(&upstreamAWSSessionToken, "upstream-aws-session-token", "", "aws session token for SigV4 signing (or AWS_SESSION_TOKEN)")
 
-	flag.StringVar(&upstreamGoogleServiceAccountFile, "upstream-google-service-account-file", "", "google service account json for jwt signing")
-	flag.StringVar(&upstreamGoogleJWTAudience, "upstream-google-jwt-audience", "", "google jwt audience")
+	flag.StringVar(&upstreamGoogleServiceAccountFile, "upstream-google-service-account-file", "", "google service account json for jwt signing (or GOOGLE_APPLICATION_CREDENTIALS)")
+	flag.StringVar(&upstreamGoogleJWTAudience, "upstream-google-jwt-audience", "", "google jwt audience (or PROMPROXY_GOOGLE_JWT_AUDIENCE)")
 	flag.DurationVar(&upstreamGoogleJWTTTL, "upstream-google-jwt-ttl", time.Hour, "google jwt ttl")
 
-	flag.StringVar(&upstreamAzureTenantID, "upstream-azure-tenant-id", "", "azure tenant id for oauth2")
-	flag.StringVar(&upstreamAzureClientID, "upstream-azure-client-id", "", "azure client id for oauth2")
-	flag.StringVar(&upstreamAzureClientSecret, "upstream-azure-client-secret", "", "azure client secret for oauth2")
-	flag.StringVar(&upstreamAzureScopes, "upstream-azure-scopes", "", "azure oauth2 scopes, separated by commas")
-	flag.StringVar(&upstreamAzureTokenURL, "upstream-azure-token-url", "", "azure oauth2 token url override")
+	flag.StringVar(&upstreamAzureTenantID, "upstream-azure-tenant-id", "", "azure tenant id for oauth2 (or AZURE_TENANT_ID)")
+	flag.StringVar(&upstreamAzureClientID, "upstream-azure-client-id", "", "azure client id for oauth2 (or AZURE_CLIENT_ID)")
+	flag.StringVar(&upstreamAzureClientSecret, "upstream-azure-client-secret", "", "azure client secret for oauth2 (or AZURE_CLIENT_SECRET)")
+	flag.StringVar(&upstreamAzureScopes, "upstream-azure-scopes", "", "azure oauth2 scopes, separated by commas (or AZURE_SCOPES)")
+	flag.StringVar(&upstreamAzureTokenURL, "upstream-azure-token-url", "", "azure oauth2 token url override (or AZURE_TOKEN_URL)")
+}
+
+func applyEnvOverrides() {
+	if upstreamAWSRegion == "" {
+		if value := os.Getenv("AWS_REGION"); value != "" {
+			upstreamAWSRegion = value
+		} else if value := os.Getenv("AWS_DEFAULT_REGION"); value != "" {
+			upstreamAWSRegion = value
+		}
+	}
+	if upstreamAWSAccessKeyID == "" {
+		upstreamAWSAccessKeyID = os.Getenv("AWS_ACCESS_KEY_ID")
+	}
+	if upstreamAWSSecretAccessKey == "" {
+		upstreamAWSSecretAccessKey = os.Getenv("AWS_SECRET_ACCESS_KEY")
+	}
+	if upstreamAWSSessionToken == "" {
+		upstreamAWSSessionToken = os.Getenv("AWS_SESSION_TOKEN")
+	}
+	if upstreamGoogleServiceAccountFile == "" {
+		upstreamGoogleServiceAccountFile = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+	}
+	if upstreamGoogleJWTAudience == "" {
+		upstreamGoogleJWTAudience = os.Getenv("PROMPROXY_GOOGLE_JWT_AUDIENCE")
+	}
+	if upstreamAzureTenantID == "" {
+		upstreamAzureTenantID = os.Getenv("AZURE_TENANT_ID")
+	}
+	if upstreamAzureClientID == "" {
+		upstreamAzureClientID = os.Getenv("AZURE_CLIENT_ID")
+	}
+	if upstreamAzureClientSecret == "" {
+		upstreamAzureClientSecret = os.Getenv("AZURE_CLIENT_SECRET")
+	}
+	if upstreamAzureScopes == "" {
+		upstreamAzureScopes = os.Getenv("AZURE_SCOPES")
+	}
+	if upstreamAzureTokenURL == "" {
+		upstreamAzureTokenURL = os.Getenv("AZURE_TOKEN_URL")
+	}
 }
 
 func newProxy() (*proxy.Proxy, error) {
@@ -217,6 +257,7 @@ func loadAWSConfig(ctx context.Context) (aws.Config, error) {
 
 func main() {
 	flag.Parse()
+	applyEnvOverrides()
 
 	p, err := newProxy()
 	if err != nil {

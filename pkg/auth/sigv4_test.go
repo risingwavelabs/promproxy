@@ -15,6 +15,8 @@
 package auth
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -22,9 +24,38 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/stretchr/testify/require"
 )
+
+type errCredentialsProvider struct {
+	err error
+}
+
+func (p errCredentialsProvider) Retrieve(ctx context.Context) (aws.Credentials, error) {
+	return aws.Credentials{}, p.err
+}
+
+type errSigner struct {
+	err error
+}
+
+func (s errSigner) SignHTTP(ctx context.Context, credentials aws.Credentials, r *http.Request, payloadHash string, service string, region string, signingTime time.Time, optFns ...func(*v4.SignerOptions)) error {
+	return s.err
+}
+
+type errReadCloser struct {
+	err error
+}
+
+func (r errReadCloser) Read(p []byte) (int, error) {
+	return 0, r.err
+}
+
+func (r errReadCloser) Close() error {
+	return nil
+}
 
 func TestSigV4TransportSignsRequests(t *testing.T) {
 	fixedTime := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
@@ -59,4 +90,56 @@ func TestSigV4TransportSignsRequests(t *testing.T) {
 	require.Equal(t, "20250102T030405Z", gotDate)
 	require.Equal(t, "SESSION", gotToken)
 	require.Equal(t, "query=up", gotBody)
+}
+
+func TestSigV4TransportCredentialsError(t *testing.T) {
+	transport, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return emptyResponse(), nil
+	}), SigV4Config{
+		Region:      "us-east-1",
+		Service:     "aps",
+		Credentials: errCredentialsProvider{err: errors.New("no credentials")},
+	})
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, "https://aps.example.com/api/v1/query", nil)
+	require.NoError(t, err)
+
+	_, err = transport.RoundTrip(req)
+	require.Error(t, err)
+}
+
+func TestSigV4TransportBodyReadError(t *testing.T) {
+	transport, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return emptyResponse(), nil
+	}), SigV4Config{
+		Region:      "us-east-1",
+		Service:     "aps",
+		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")),
+	})
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, "https://aps.example.com/api/v1/query", errReadCloser{err: errors.New("read failed")})
+	require.NoError(t, err)
+
+	_, err = transport.RoundTrip(req)
+	require.Error(t, err)
+}
+
+func TestSigV4TransportSignerError(t *testing.T) {
+	transport, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return emptyResponse(), nil
+	}), SigV4Config{
+		Region:      "us-east-1",
+		Service:     "aps",
+		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")),
+		Signer:      errSigner{err: errors.New("sign failed")},
+	})
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, "https://aps.example.com/api/v1/query", nil)
+	require.NoError(t, err)
+
+	_, err = transport.RoundTrip(req)
+	require.Error(t, err)
 }

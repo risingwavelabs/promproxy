@@ -44,6 +44,8 @@ The proxy server can be configured using the following CLI flags:
 - `-upstream-azure-scopes`: Azure OAuth2 scopes, separated by commas. (default "")
 - `-upstream-azure-token-url`: Azure OAuth2 token url override. (default "")
 
+For sensitive values, prefer environment variables or provider credential sources instead of command-line flags. Supported environment variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `AWS_DEFAULT_REGION`, `GOOGLE_APPLICATION_CREDENTIALS`, `PROMPROXY_GOOGLE_JWT_AUDIENCE`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SCOPES`, `AZURE_TOKEN_URL`.
+
 ## License
 
 This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full
