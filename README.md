@@ -29,6 +29,20 @@ The proxy server can be configured using the following CLI flags:
 - `-label-matchers`: The label matchers to be used for the proxy server. (default "")
 - `-isolation-keys`: The isolation keys to be used for the proxy server. (default "")
 - `-print-access-log`: Print access log. (default false)
+- `-upstream-auth`: Upstream authentication method. Supported values: `aws-sigv4`, `google-jwt`, `azure-oauth2`. (default "")
+- `-upstream-aws-region`: AWS region for SigV4 signing. (default "")
+- `-upstream-aws-service`: AWS service name for SigV4 signing. (default "aps")
+- `-upstream-aws-access-key-id`: AWS access key id for SigV4 signing. (default "")
+- `-upstream-aws-secret-access-key`: AWS secret access key for SigV4 signing. (default "")
+- `-upstream-aws-session-token`: AWS session token for SigV4 signing. (default "")
+- `-upstream-google-service-account-file`: Google service account JSON for JWT signing. (default "")
+- `-upstream-google-jwt-audience`: Google JWT audience. (default "")
+- `-upstream-google-jwt-ttl`: Google JWT time-to-live. (default "1h0m0s")
+- `-upstream-azure-tenant-id`: Azure tenant id for OAuth2. (default "")
+- `-upstream-azure-client-id`: Azure client id for OAuth2. (default "")
+- `-upstream-azure-client-secret`: Azure client secret for OAuth2. (default "")
+- `-upstream-azure-scopes`: Azure OAuth2 scopes, separated by commas. (default "")
+- `-upstream-azure-token-url`: Azure OAuth2 token url override. (default "")
 
 ## License
 
