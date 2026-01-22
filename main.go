@@ -167,7 +167,7 @@ func newProxy() (*proxy.Proxy, error) {
 			if err != nil {
 				return nil, err
 			}
-			sigv4Transport, err := auth.NewSigV4Transport(transport, auth.SigV4Config{
+			sigV4Transport, err := auth.NewSigV4Transport(transport, auth.SigV4Config{
 				Region:      cfg.Region,
 				Service:     upstreamAWSService,
 				Credentials: cfg.Credentials,
@@ -175,7 +175,7 @@ func newProxy() (*proxy.Proxy, error) {
 			if err != nil {
 				return nil, err
 			}
-			transport = sigv4Transport
+			transport = sigV4Transport
 		case "google-jwt":
 			source, err := auth.NewGoogleJWTSourceFromFile(upstreamGoogleServiceAccountFile, auth.GoogleJWTConfig{
 				Audience: upstreamGoogleJWTAudience,

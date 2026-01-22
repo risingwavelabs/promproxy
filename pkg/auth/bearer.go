@@ -36,7 +36,7 @@ func NewBearerTransport(next http.RoundTripper, source TokenSource) (http.RoundT
 		next = http.DefaultTransport
 	}
 	if source == nil {
-		return nil, fmt.Errorf("auth: TokenSource is nil in NewBearerTransport")
+		return nil, fmt.Errorf("token source is required")
 	}
 	return &bearerTransport{
 		next:   next,
