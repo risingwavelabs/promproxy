@@ -25,12 +25,13 @@ import (
 
 func TestBearerTransportAddsAuthorization(t *testing.T) {
 	var gotAuth string
-	transport := NewBearerTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	transport, err := NewBearerTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		gotAuth = req.Header.Get("Authorization")
 		return emptyResponse(), nil
 	}), tokenSourceFunc(func(context.Context) (string, error) {
 		return "token-123", nil
 	}))
+	require.NoError(t, err)
 
 	req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
 	require.NoError(t, err)
@@ -41,15 +42,21 @@ func TestBearerTransportAddsAuthorization(t *testing.T) {
 }
 
 func TestBearerTransportPropagatesErrors(t *testing.T) {
-	transport := NewBearerTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	transport, err := NewBearerTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return emptyResponse(), nil
 	}), tokenSourceFunc(func(context.Context) (string, error) {
 		return "", errors.New("boom")
 	}))
+	require.NoError(t, err)
 
 	req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
 	require.NoError(t, err)
 
 	_, err = transport.RoundTrip(req)
+	require.Error(t, err)
+}
+
+func TestBearerTransportNilSource(t *testing.T) {
+	_, err := NewBearerTransport(nil, nil)
 	require.Error(t, err)
 }

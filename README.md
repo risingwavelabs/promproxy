@@ -38,11 +38,11 @@ The proxy server can be configured using the following CLI flags:
 - `-upstream-google-service-account-file`: Google service account JSON for JWT signing. (default "")
 - `-upstream-google-jwt-audience`: Google JWT audience. (default "")
 - `-upstream-google-jwt-ttl`: Google JWT time-to-live. (default "1h0m0s")
-- `-upstream-azure-tenant-id`: Azure tenant id for OAuth2. (default "")
-- `-upstream-azure-client-id`: Azure client id for OAuth2. (default "")
+- `-upstream-azure-tenant-id`: Azure tenant ID for OAuth2. (default "")
+- `-upstream-azure-client-id`: Azure client ID for OAuth2. (default "")
 - `-upstream-azure-client-secret`: Azure client secret for OAuth2. (default "")
 - `-upstream-azure-scopes`: Azure OAuth2 scopes, separated by commas. (default "")
-- `-upstream-azure-token-url`: Azure OAuth2 token url override. (default "")
+- `-upstream-azure-token-url`: Azure OAuth2 token URL override. (default "")
 
 For sensitive values, prefer environment variables or provider credential sources instead of command-line flags. Supported environment variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `AWS_DEFAULT_REGION`, `GOOGLE_APPLICATION_CREDENTIALS`, `PROMPROXY_GOOGLE_JWT_AUDIENCE`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SCOPES`, `AZURE_TOKEN_URL`.
 

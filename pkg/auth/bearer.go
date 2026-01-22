@@ -31,17 +31,17 @@ type bearerTransport struct {
 }
 
 // NewBearerTransport adds Authorization bearer tokens to the request.
-func NewBearerTransport(next http.RoundTripper, source TokenSource) http.RoundTripper {
+func NewBearerTransport(next http.RoundTripper, source TokenSource) (http.RoundTripper, error) {
 	if next == nil {
 		next = http.DefaultTransport
 	}
 	if source == nil {
-		panic("auth: TokenSource is nil in NewBearerTransport")
+		return nil, fmt.Errorf("auth: TokenSource is nil in NewBearerTransport")
 	}
 	return &bearerTransport{
 		next:   next,
 		source: source,
-	}
+	}, nil
 }
 
 func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {

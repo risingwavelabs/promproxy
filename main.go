@@ -184,7 +184,11 @@ func newProxy() (*proxy.Proxy, error) {
 			if err != nil {
 				return nil, err
 			}
-			transport = auth.NewBearerTransport(transport, source)
+			bearerTransport, err := auth.NewBearerTransport(transport, source)
+			if err != nil {
+				return nil, err
+			}
+			transport = bearerTransport
 		case "azure-oauth2":
 			source, err := auth.NewAzureOAuth2Source(auth.AzureOAuth2Config{
 				TenantID:     upstreamAzureTenantID,
@@ -196,7 +200,11 @@ func newProxy() (*proxy.Proxy, error) {
 			if err != nil {
 				return nil, err
 			}
-			transport = auth.NewBearerTransport(transport, source)
+			bearerTransport, err := auth.NewBearerTransport(transport, source)
+			if err != nil {
+				return nil, err
+			}
+			transport = bearerTransport
 		default:
 			return nil, fmt.Errorf("unsupported upstream auth: %s", upstreamAuth)
 		}
