@@ -75,19 +75,69 @@ func init() {
 
 	flag.StringVar(&upstreamAWSRegion, "upstream-aws-region", "", "AWS region for SigV4 signing (or AWS_REGION)")
 	flag.StringVar(&upstreamAWSService, "upstream-aws-service", "aps", "AWS service name for SigV4 signing")
-	flag.StringVar(&upstreamAWSAccessKeyID, "upstream-aws-access-key-id", "", "AWS access key ID for SigV4 signing (or AWS_ACCESS_KEY_ID)")
-	flag.StringVar(&upstreamAWSSecretAccessKey, "upstream-aws-secret-access-key", "", "AWS secret access key for SigV4 signing (or AWS_SECRET_ACCESS_KEY)")
-	flag.StringVar(&upstreamAWSSessionToken, "upstream-aws-session-token", "", "AWS session token for SigV4 signing (or AWS_SESSION_TOKEN)")
+	flag.StringVar(
+		&upstreamAWSAccessKeyID,
+		"upstream-aws-access-key-id",
+		"",
+		"AWS access key ID for SigV4 signing (or AWS_ACCESS_KEY_ID)",
+	)
+	flag.StringVar(
+		&upstreamAWSSecretAccessKey,
+		"upstream-aws-secret-access-key",
+		"",
+		"AWS secret access key for SigV4 signing (or AWS_SECRET_ACCESS_KEY)",
+	)
+	flag.StringVar(
+		&upstreamAWSSessionToken,
+		"upstream-aws-session-token",
+		"",
+		"AWS session token for SigV4 signing (or AWS_SESSION_TOKEN)",
+	)
 
-	flag.StringVar(&upstreamGoogleServiceAccountFile, "upstream-google-service-account-file", "", "Google service account JSON for JWT signing (or GOOGLE_APPLICATION_CREDENTIALS)")
-	flag.StringVar(&upstreamGoogleJWTAudience, "upstream-google-jwt-audience", "", "Google JWT audience (or PROMPROXY_GOOGLE_JWT_AUDIENCE)")
+	flag.StringVar(
+		&upstreamGoogleServiceAccountFile,
+		"upstream-google-service-account-file",
+		"",
+		"Google service account JSON for JWT signing (or GOOGLE_APPLICATION_CREDENTIALS)",
+	)
+	flag.StringVar(
+		&upstreamGoogleJWTAudience,
+		"upstream-google-jwt-audience",
+		"",
+		"Google JWT audience (or PROMPROXY_GOOGLE_JWT_AUDIENCE)",
+	)
 	flag.DurationVar(&upstreamGoogleJWTTTL, "upstream-google-jwt-ttl", time.Hour, "Google JWT TTL")
 
-	flag.StringVar(&upstreamAzureTenantID, "upstream-azure-tenant-id", "", "Azure tenant ID for OAuth2 (or AZURE_TENANT_ID)")
-	flag.StringVar(&upstreamAzureClientID, "upstream-azure-client-id", "", "Azure client ID for OAuth2 (or AZURE_CLIENT_ID)")
-	flag.StringVar(&upstreamAzureClientSecret, "upstream-azure-client-secret", "", "Azure client secret for OAuth2 (or AZURE_CLIENT_SECRET)")
-	flag.StringVar(&upstreamAzureScopes, "upstream-azure-scopes", "", "Azure OAuth2 scopes, separated by commas (or AZURE_SCOPES)")
-	flag.StringVar(&upstreamAzureTokenURL, "upstream-azure-token-url", "", "Azure OAuth2 token URL override (or AZURE_TOKEN_URL)")
+	flag.StringVar(
+		&upstreamAzureTenantID,
+		"upstream-azure-tenant-id",
+		"",
+		"Azure tenant ID for OAuth2 (or AZURE_TENANT_ID)",
+	)
+	flag.StringVar(
+		&upstreamAzureClientID,
+		"upstream-azure-client-id",
+		"",
+		"Azure client ID for OAuth2 (or AZURE_CLIENT_ID)",
+	)
+	flag.StringVar(
+		&upstreamAzureClientSecret,
+		"upstream-azure-client-secret",
+		"",
+		"Azure client secret for OAuth2 (or AZURE_CLIENT_SECRET)",
+	)
+	flag.StringVar(
+		&upstreamAzureScopes,
+		"upstream-azure-scopes",
+		"",
+		"Azure OAuth2 scopes, separated by commas (or AZURE_SCOPES)",
+	)
+	flag.StringVar(
+		&upstreamAzureTokenURL,
+		"upstream-azure-token-url",
+		"",
+		"Azure OAuth2 token URL override (or AZURE_TOKEN_URL)",
+	)
 }
 
 func applyEnvOverrides() {

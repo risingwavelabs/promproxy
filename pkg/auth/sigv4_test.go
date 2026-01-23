@@ -41,7 +41,16 @@ type errSigner struct {
 	err error
 }
 
-func (s errSigner) SignHTTP(ctx context.Context, credentials aws.Credentials, r *http.Request, payloadHash string, service string, region string, signingTime time.Time, optFns ...func(*v4.SignerOptions)) error {
+func (s errSigner) SignHTTP(
+	ctx context.Context,
+	credentials aws.Credentials,
+	r *http.Request,
+	payloadHash string,
+	service string,
+	region string,
+	signingTime time.Time,
+	optFns ...func(*v4.SignerOptions),
+) error {
 	return s.err
 }
 
@@ -119,7 +128,11 @@ func TestSigV4TransportBodyReadError(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	req, err := http.NewRequest(http.MethodPost, "https://aps.example.com/api/v1/query", errReadCloser{err: errors.New("read failed")})
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"https://aps.example.com/api/v1/query",
+		errReadCloser{err: errors.New("read failed")},
+	)
 	require.NoError(t, err)
 
 	_, err = transport.RoundTrip(req)

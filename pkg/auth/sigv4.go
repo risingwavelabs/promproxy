@@ -89,7 +89,15 @@ func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	payloadHash := hashSHA256Hex(bodyBytes)
-	if err := t.config.Signer.SignHTTP(req.Context(), creds, reqCopy, payloadHash, t.config.Service, t.config.Region, t.config.Now()); err != nil {
+	if err := t.config.Signer.SignHTTP(
+		req.Context(),
+		creds,
+		reqCopy,
+		payloadHash,
+		t.config.Service,
+		t.config.Region,
+		t.config.Now(),
+	); err != nil {
 		return nil, fmt.Errorf("sign aws request: %w", err)
 	}
 	return t.next.RoundTrip(reqCopy)
