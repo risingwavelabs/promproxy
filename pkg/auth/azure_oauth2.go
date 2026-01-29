@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
@@ -31,13 +32,17 @@ type AzureOAuth2Config struct {
 	ClientSecret string
 	Scopes       []string
 	TokenURL     string
+	Now          func() time.Time
 }
 
-// AzureOAuth2Source signs client-credential tokens for Azure upstreams.
+const azureOAuth2RefreshSkew = time.Minute
+
+// AzureOAuth2Source retrieves client-credential tokens for Azure upstreams.
 type AzureOAuth2Source struct {
 	cfg   clientcredentials.Config
 	mu    sync.Mutex
 	token *oauth2.Token
+	now   func() time.Time
 }
 
 // NewAzureOAuth2Source creates an OAuth2 client-credential token source.
@@ -59,6 +64,9 @@ func NewAzureOAuth2Source(cfg AzureOAuth2Config) (*AzureOAuth2Source, error) {
 	if tokenURL == "" {
 		tokenURL = fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", cfg.TenantID)
 	}
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
 
 	credCfg := clientcredentials.Config{
 		ClientID:     cfg.ClientID,
@@ -69,24 +77,28 @@ func NewAzureOAuth2Source(cfg AzureOAuth2Config) (*AzureOAuth2Source, error) {
 
 	return &AzureOAuth2Source{
 		cfg: credCfg,
+		now: cfg.Now,
 	}, nil
 }
 
+// Token returns a cached OAuth2 access token or retrieves a new one if needed.
 func (s *AzureOAuth2Source) Token(ctx context.Context) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	token := s.token
-	if token != nil && token.Valid() {
-		return token.AccessToken, nil
+	now := s.now()
+	if token != nil && token.AccessToken != "" {
+		if token.Expiry.IsZero() || now.Before(token.Expiry.Add(-azureOAuth2RefreshSkew)) {
+			return token.AccessToken, nil
+		}
 	}
 
-	var err error
-	token, err = s.cfg.TokenSource(ctx).Token()
+	token, err := s.cfg.Token(ctx)
 	if err != nil {
 		return "", fmt.Errorf("retrieve oauth2 token: %w", err)
 	}

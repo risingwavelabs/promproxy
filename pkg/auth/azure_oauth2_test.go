@@ -81,12 +81,14 @@ func TestAzureOAuth2TokenSourceCachesToken(t *testing.T) {
 	}))
 	defer server.Close()
 
+	fakeNow := time.Now()
 	source, err := NewAzureOAuth2Source(AzureOAuth2Config{
 		TenantID:     "tenant",
 		ClientID:     "client",
 		ClientSecret: "secret",
 		Scopes:       []string{"https://example.com/.default"},
 		TokenURL:     server.URL,
+		Now:          func() time.Time { return fakeNow },
 	})
 	require.NoError(t, err)
 
@@ -107,19 +109,21 @@ func TestAzureOAuth2TokenSourceRefreshesToken(t *testing.T) {
 	}))
 	defer server.Close()
 
+	fakeNow := time.Now()
 	source, err := NewAzureOAuth2Source(AzureOAuth2Config{
 		TenantID:     "tenant",
 		ClientID:     "client",
 		ClientSecret: "secret",
 		Scopes:       []string{"https://example.com/.default"},
 		TokenURL:     server.URL,
+		Now:          func() time.Time { return fakeNow },
 	})
 	require.NoError(t, err)
 
 	tokenOne, err := source.Token(context.Background())
 	require.NoError(t, err)
-
-	time.Sleep(2 * time.Second)
+	require.NotNil(t, source.token)
+	fakeNow = source.token.Expiry.Add(azureOAuth2RefreshSkew + time.Second)
 
 	tokenTwo, err := source.Token(context.Background())
 	require.NoError(t, err)
@@ -170,4 +174,35 @@ func TestAzureOAuth2TokenSourceHonorsContext(t *testing.T) {
 	_, err = source.Token(ctx)
 	require.Error(t, err)
 	require.Equal(t, 0, callCount)
+}
+
+func TestAzureOAuth2TokenSourceCancelsInFlight(t *testing.T) {
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	source, err := NewAzureOAuth2Source(AzureOAuth2Config{
+		TenantID:     "tenant",
+		ClientID:     "client",
+		ClientSecret: "secret",
+		Scopes:       []string{"https://example.com/.default"},
+		TokenURL:     server.URL,
+	})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := source.Token(ctx)
+		errCh <- err
+	}()
+
+	<-started
+	cancel()
+
+	err = <-errCh
+	require.Error(t, err)
 }
