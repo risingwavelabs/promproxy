@@ -3,6 +3,8 @@ module github.com/risingwavelabs/promproxy
 go 1.23
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.41.1
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
 	github.com/prometheus/prometheus v0.301.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/stretchr/testify v1.10.0
