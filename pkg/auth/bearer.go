@@ -39,7 +39,7 @@ func NewBearerTransport(next http.RoundTripper, source TokenSource) (http.RoundT
 		next = http.DefaultTransport
 	}
 	if source == nil {
-		return nil, fmt.Errorf("token source is required")
+		return nil, errors.New("token source is required")
 	}
 	return &bearerTransport{
 		next:   next,
@@ -52,7 +52,8 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get bearer token: %w", err)
 	}
-	if strings.TrimSpace(token) == "" {
+	token = strings.TrimSpace(token)
+	if token == "" {
 		return nil, errors.New("bearer token is empty")
 	}
 
