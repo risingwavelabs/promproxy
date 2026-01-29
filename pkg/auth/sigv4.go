@@ -83,9 +83,13 @@ func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if reqCopy.Body != nil && reqCopy.Body != http.NoBody {
 		reqCopy.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		reqCopy.ContentLength = int64(len(bodyBytes))
+		reqCopy.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+		}
 	} else {
 		reqCopy.Body = http.NoBody
 		reqCopy.ContentLength = 0
+		reqCopy.GetBody = nil
 	}
 
 	payloadHash := hashSHA256Hex(bodyBytes)
@@ -120,6 +124,11 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 		defer reader.Close()
 		body, err := io.ReadAll(reader)
 		if err != nil {
+			if req.Body != nil && req.Body != http.NoBody {
+				if closeErr := req.Body.Close(); closeErr != nil {
+					return nil, fmt.Errorf("close request body: %w", closeErr)
+				}
+			}
 			return nil, fmt.Errorf("read request body: %w", err)
 		}
 		if req.Body != nil && req.Body != http.NoBody {
