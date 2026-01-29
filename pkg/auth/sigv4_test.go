@@ -78,7 +78,8 @@ func TestSigV4TransportSignsRequests(t *testing.T) {
 		gotAuth = req.Header.Get("Authorization")
 		gotDate = req.Header.Get("X-Amz-Date")
 		gotToken = req.Header.Get("X-Amz-Security-Token")
-		body, _ := io.ReadAll(req.Body)
+		body, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
 		gotBody = string(body)
 		return emptyResponse(), nil
 	}), SigV4Config{
