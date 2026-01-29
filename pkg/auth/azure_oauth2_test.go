@@ -174,7 +174,7 @@ func TestAzureOAuth2TokenSourceHonorsContext(t *testing.T) {
 	cancel()
 
 	_, err = source.Token(ctx)
-	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, 0, callCount)
 }
 
