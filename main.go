@@ -73,7 +73,12 @@ func init() {
 	flag.StringVar(&isolationKeys, "isolation-keys", "", "keys to isolate on, separated by commas")
 	flag.StringVar(&upstreamAuth, "upstream-auth", "", "upstream auth method: aws-sigv4, google-jwt, azure-oauth2")
 
-	flag.StringVar(&upstreamAWSRegion, "upstream-aws-region", "", "AWS region for SigV4 signing (or AWS_REGION)")
+	flag.StringVar(
+		&upstreamAWSRegion,
+		"upstream-aws-region",
+		"",
+		"AWS region for SigV4 signing (AWS_REGION or AWS_DEFAULT_REGION)",
+	)
 	flag.StringVar(&upstreamAWSService, "upstream-aws-service", "aps", "AWS service name for SigV4 signing")
 	flag.StringVar(
 		&upstreamAWSAccessKeyID,
@@ -98,7 +103,7 @@ func init() {
 		&upstreamGoogleServiceAccountFile,
 		"upstream-google-service-account-file",
 		"",
-		"Google service account JSON for JWT signing (or GOOGLE_APPLICATION_CREDENTIALS)",
+		"Path to Google service account JSON file for JWT signing (or GOOGLE_APPLICATION_CREDENTIALS)",
 	)
 	flag.StringVar(
 		&upstreamGoogleJWTAudience,
@@ -227,6 +232,11 @@ func newProxy() (*proxy.Proxy, error) {
 			}
 			transport = sigV4Transport
 		case "google-jwt":
+			if upstreamGoogleServiceAccountFile == "" {
+				return nil, fmt.Errorf(
+					"upstream-auth=google-jwt requires -upstream-google-service-account-file or GOOGLE_APPLICATION_CREDENTIALS to be set",
+				)
+			}
 			source, err := auth.NewGoogleJWTSourceFromFile(upstreamGoogleServiceAccountFile, auth.GoogleJWTConfig{
 				Audience: upstreamGoogleJWTAudience,
 				TTL:      upstreamGoogleJWTTTL,
@@ -294,7 +304,9 @@ func loadAWSConfig(ctx context.Context) (aws.Config, error) {
 
 	if upstreamAWSAccessKeyID != "" || upstreamAWSSecretAccessKey != "" || upstreamAWSSessionToken != "" {
 		if upstreamAWSAccessKeyID == "" || upstreamAWSSecretAccessKey == "" {
-			return aws.Config{}, errors.New("aws access key id and secret access key are required")
+			return aws.Config{}, errors.New(
+				"aws access key id and secret access key are required; configure them via -upstream-aws-access-key-id/-upstream-aws-secret-access-key flags or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY environment variables",
+			)
 		}
 		opts = append(opts, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			upstreamAWSAccessKeyID,
@@ -308,7 +320,9 @@ func loadAWSConfig(ctx context.Context) (aws.Config, error) {
 		return aws.Config{}, fmt.Errorf("load aws config: %w", err)
 	}
 	if cfg.Region == "" {
-		return aws.Config{}, errors.New("aws region is required")
+		return aws.Config{}, errors.New(
+			"aws region is required; specify it with the -upstream-aws-region flag or via AWS_REGION / AWS_DEFAULT_REGION environment variables",
+		)
 	}
 	return cfg, nil
 }
