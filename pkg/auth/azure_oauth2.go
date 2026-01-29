@@ -83,6 +83,10 @@ func NewAzureOAuth2Source(cfg AzureOAuth2Config) (*AzureOAuth2Source, error) {
 
 // Token returns a cached OAuth2 access token or retrieves a new one if needed.
 func (s *AzureOAuth2Source) Token(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
