@@ -20,13 +20,56 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestAzureOAuth2ConfigValidation(t *testing.T) {
-	_, err := NewAzureOAuth2Source(AzureOAuth2Config{})
-	require.Error(t, err)
+	tests := []struct {
+		name string
+		cfg  AzureOAuth2Config
+	}{
+		{
+			name: "missing tenant",
+			cfg: AzureOAuth2Config{
+				ClientID:     "client",
+				ClientSecret: "secret",
+				Scopes:       []string{"https://example.com/.default"},
+			},
+		},
+		{
+			name: "missing client id",
+			cfg: AzureOAuth2Config{
+				TenantID:     "tenant",
+				ClientSecret: "secret",
+				Scopes:       []string{"https://example.com/.default"},
+			},
+		},
+		{
+			name: "missing client secret",
+			cfg: AzureOAuth2Config{
+				TenantID: "tenant",
+				ClientID: "client",
+				Scopes:   []string{"https://example.com/.default"},
+			},
+		},
+		{
+			name: "missing scopes",
+			cfg: AzureOAuth2Config{
+				TenantID:     "tenant",
+				ClientID:     "client",
+				ClientSecret: "secret",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NewAzureOAuth2Source(test.cfg)
+			require.Error(t, err)
+		})
+	}
 }
 
 func TestAzureOAuth2TokenSourceCachesToken(t *testing.T) {
@@ -53,6 +96,35 @@ func TestAzureOAuth2TokenSourceCachesToken(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, tokenOne, tokenTwo)
 	require.Equal(t, 1, callCount)
+}
+
+func TestAzureOAuth2TokenSourceRefreshesToken(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"access_token":"token-%d","token_type":"Bearer","expires_in":1}`, callCount)
+	}))
+	defer server.Close()
+
+	source, err := NewAzureOAuth2Source(AzureOAuth2Config{
+		TenantID:     "tenant",
+		ClientID:     "client",
+		ClientSecret: "secret",
+		Scopes:       []string{"https://example.com/.default"},
+		TokenURL:     server.URL,
+	})
+	require.NoError(t, err)
+
+	tokenOne, err := source.Token(context.Background())
+	require.NoError(t, err)
+
+	time.Sleep(2 * time.Second)
+
+	tokenTwo, err := source.Token(context.Background())
+	require.NoError(t, err)
+	require.NotEqual(t, tokenOne, tokenTwo)
+	require.Equal(t, 2, callCount)
 }
 
 func TestAzureOAuth2TokenSourceReturnsTokenErrors(t *testing.T) {

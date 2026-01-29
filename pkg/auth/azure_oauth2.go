@@ -33,14 +33,15 @@ type AzureOAuth2Config struct {
 	TokenURL     string
 }
 
-type oauthTokenSource struct {
+// AzureOAuth2Source signs client-credential tokens for Azure upstreams.
+type AzureOAuth2Source struct {
 	cfg   clientcredentials.Config
 	mu    sync.Mutex
 	token *oauth2.Token
 }
 
 // NewAzureOAuth2Source creates an OAuth2 client-credential token source.
-func NewAzureOAuth2Source(cfg AzureOAuth2Config) (TokenSource, error) {
+func NewAzureOAuth2Source(cfg AzureOAuth2Config) (*AzureOAuth2Source, error) {
 	if cfg.TenantID == "" {
 		return nil, errors.New("azure tenant id is required")
 	}
@@ -66,15 +67,12 @@ func NewAzureOAuth2Source(cfg AzureOAuth2Config) (TokenSource, error) {
 		Scopes:       cfg.Scopes,
 	}
 
-	return &oauthTokenSource{
+	return &AzureOAuth2Source{
 		cfg: credCfg,
 	}, nil
 }
 
-func (s *oauthTokenSource) Token(ctx context.Context) (string, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+func (s *AzureOAuth2Source) Token(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -87,7 +85,8 @@ func (s *oauthTokenSource) Token(ctx context.Context) (string, error) {
 		return token.AccessToken, nil
 	}
 
-	token, err := s.cfg.TokenSource(ctx).Token()
+	var err error
+	token, err = s.cfg.TokenSource(ctx).Token()
 	if err != nil {
 		return "", fmt.Errorf("retrieve oauth2 token: %w", err)
 	}
