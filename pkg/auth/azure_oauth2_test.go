@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 )
 
 func TestAzureOAuth2ConfigValidation(t *testing.T) {
@@ -177,23 +178,25 @@ func TestAzureOAuth2TokenSourceHonorsContext(t *testing.T) {
 }
 
 func TestAzureOAuth2TokenSourceCancelsInFlight(t *testing.T) {
-	started := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		close(started)
-		<-r.Context().Done()
-	}))
-	defer server.Close()
-
 	source, err := NewAzureOAuth2Source(AzureOAuth2Config{
 		TenantID:     "tenant",
 		ClientID:     "client",
 		ClientSecret: "secret",
 		Scopes:       []string{"https://example.com/.default"},
-		TokenURL:     server.URL,
+		TokenURL:     "https://example.com/oauth2/token",
 	})
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			close(started)
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		}),
+	}
+
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), oauth2.HTTPClient, client))
 	errCh := make(chan error, 1)
 	go func() {
 		_, err := source.Token(ctx)
