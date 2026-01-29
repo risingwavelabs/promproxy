@@ -16,8 +16,10 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // TokenSource returns bearer tokens for upstream requests.
@@ -30,7 +32,8 @@ type bearerTransport struct {
 	source TokenSource
 }
 
-// NewBearerTransport adds Authorization bearer tokens to the request.
+// NewBearerTransport sets the Authorization header to a bearer token for each request,
+// overwriting any existing Authorization value.
 func NewBearerTransport(next http.RoundTripper, source TokenSource) (http.RoundTripper, error) {
 	if next == nil {
 		next = http.DefaultTransport
@@ -49,9 +52,14 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get bearer token: %w", err)
 	}
+	if strings.TrimSpace(token) == "" {
+		return nil, errors.New("bearer token is empty")
+	}
 
 	clone := req.Clone(req.Context())
-	clone.Header = clone.Header.Clone()
+	if clone.Header == nil {
+		clone.Header = make(http.Header)
+	}
 	clone.Header.Set("Authorization", "Bearer "+token)
 	return t.next.RoundTrip(clone)
 }
