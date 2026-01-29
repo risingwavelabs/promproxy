@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -188,9 +189,12 @@ func TestAzureOAuth2TokenSourceCancelsInFlight(t *testing.T) {
 	require.NoError(t, err)
 
 	started := make(chan struct{})
+	var startedOnce sync.Once
 	client := &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			close(started)
+			startedOnce.Do(func() {
+				close(started)
+			})
 			<-req.Context().Done()
 			return nil, req.Context().Err()
 		}),
