@@ -90,6 +90,25 @@ func TestBearerTransportHandlesNilHeader(t *testing.T) {
 	require.Equal(t, "Bearer token-123", gotAuth)
 }
 
+func TestBearerTransportOverridesAuthorization(t *testing.T) {
+	var gotAuth string
+	transport, err := NewBearerTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		gotAuth = req.Header.Get("Authorization")
+		return emptyResponse(), nil
+	}), tokenSourceFunc(func(context.Context) (string, error) {
+		return "token-override", nil
+	}))
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Basic abc123")
+
+	_, err = transport.RoundTrip(req)
+	require.NoError(t, err)
+	require.Equal(t, "Bearer token-override", gotAuth)
+}
+
 func TestBearerTransportNilSource(t *testing.T) {
 	_, err := NewBearerTransport(nil, nil)
 	require.Error(t, err)
