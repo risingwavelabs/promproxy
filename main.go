@@ -21,6 +21,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -90,7 +91,7 @@ func init() {
 		&upstreamAWSSecretAccessKey,
 		"upstream-aws-secret-access-key",
 		"",
-		"AWS secret access key for SigV4 signing (or AWS_SECRET_ACCESS_KEY)",
+		"AWS secret access key for SigV4 signing (or AWS_SECRET_ACCESS_KEY). WARNING: passing secrets via command-line flags can expose them via process listings and shell history; prefer environment variables or credential files.",
 	)
 	flag.StringVar(
 		&upstreamAWSSessionToken,
@@ -129,7 +130,7 @@ func init() {
 		&upstreamAzureClientSecret,
 		"upstream-azure-client-secret",
 		"",
-		"Azure client secret for OAuth2 (or AZURE_CLIENT_SECRET)",
+		"Azure client secret for OAuth2 (or AZURE_CLIENT_SECRET). WARNING: passing secrets via command-line flags can expose them via process listings and shell history; prefer environment variables or credential files.",
 	)
 	flag.StringVar(
 		&upstreamAzureScopes,
@@ -195,7 +196,18 @@ func newProxy() (*proxy.Proxy, error) {
 	if dt, ok := http.DefaultTransport.(*http.Transport); ok && dt != nil {
 		baseTransport = dt.Clone()
 	} else {
-		baseTransport = &http.Transport{}
+		baseTransport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: time.Second,
+		}
 	}
 	if upstreamTLS {
 		cert, err := tls.LoadX509KeyPair(path.Join(upstreamTLSCertDir, "tls.crt"), path.Join(upstreamTLSCertDir, "tls.key"))
@@ -297,7 +309,10 @@ func newProxy() (*proxy.Proxy, error) {
 			}
 			transport = bearerTransport
 		default:
-			return nil, fmt.Errorf("unsupported upstream auth: %s", upstreamAuth)
+			return nil, fmt.Errorf(
+				"unsupported upstream auth %q; supported values are: aws-sigv4, google-jwt, azure-oauth2",
+				upstreamAuth,
+			)
 		}
 	}
 
@@ -328,6 +343,9 @@ func splitCommaSeparated(value string) []string {
 }
 
 func loadAWSConfig(ctx context.Context) (aws.Config, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	opts := []func(*config.LoadOptions) error{}
 	if upstreamAWSRegion != "" {
 		opts = append(opts, config.WithRegion(upstreamAWSRegion))
@@ -346,6 +364,8 @@ func loadAWSConfig(ctx context.Context) (aws.Config, error) {
 		)))
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	cfg, err := config.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return aws.Config{}, fmt.Errorf("load aws config: %w", err)
