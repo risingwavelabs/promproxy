@@ -191,7 +191,12 @@ func newProxy() (*proxy.Proxy, error) {
 		return nil, err
 	}
 
-	baseTransport := http.DefaultTransport.(*http.Transport).Clone()
+	var baseTransport *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok && dt != nil {
+		baseTransport = dt.Clone()
+	} else {
+		baseTransport = &http.Transport{}
+	}
 	if upstreamTLS {
 		cert, err := tls.LoadX509KeyPair(path.Join(upstreamTLSCertDir, "tls.crt"), path.Join(upstreamTLSCertDir, "tls.key"))
 		if err != nil {
@@ -237,6 +242,11 @@ func newProxy() (*proxy.Proxy, error) {
 					"upstream-auth=google-jwt requires -upstream-google-service-account-file or GOOGLE_APPLICATION_CREDENTIALS to be set",
 				)
 			}
+			if upstreamGoogleJWTAudience == "" {
+				return nil, fmt.Errorf(
+					"upstream-auth=google-jwt requires -upstream-google-jwt-audience or PROMPROXY_GOOGLE_JWT_AUDIENCE to be set",
+				)
+			}
 			source, err := auth.NewGoogleJWTSourceFromFile(upstreamGoogleServiceAccountFile, auth.GoogleJWTConfig{
 				Audience: upstreamGoogleJWTAudience,
 				TTL:      upstreamGoogleJWTTTL,
@@ -250,11 +260,32 @@ func newProxy() (*proxy.Proxy, error) {
 			}
 			transport = bearerTransport
 		case "azure-oauth2":
+			if upstreamAzureTenantID == "" {
+				return nil, fmt.Errorf(
+					"upstream-auth=azure-oauth2 requires -upstream-azure-tenant-id or AZURE_TENANT_ID to be set",
+				)
+			}
+			if upstreamAzureClientID == "" {
+				return nil, fmt.Errorf(
+					"upstream-auth=azure-oauth2 requires -upstream-azure-client-id or AZURE_CLIENT_ID to be set",
+				)
+			}
+			if upstreamAzureClientSecret == "" {
+				return nil, fmt.Errorf(
+					"upstream-auth=azure-oauth2 requires -upstream-azure-client-secret or AZURE_CLIENT_SECRET to be set",
+				)
+			}
+			scopes := splitCommaSeparated(upstreamAzureScopes)
+			if len(scopes) == 0 {
+				return nil, fmt.Errorf(
+					"upstream-auth=azure-oauth2 requires -upstream-azure-scopes or AZURE_SCOPES to be set",
+				)
+			}
 			source, err := auth.NewAzureOAuth2Source(auth.AzureOAuth2Config{
 				TenantID:     upstreamAzureTenantID,
 				ClientID:     upstreamAzureClientID,
 				ClientSecret: upstreamAzureClientSecret,
-				Scopes:       splitCommaSeparated(upstreamAzureScopes),
+				Scopes:       scopes,
 				TokenURL:     upstreamAzureTokenURL,
 			})
 			if err != nil {
