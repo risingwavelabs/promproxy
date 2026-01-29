@@ -4,6 +4,7 @@ go 1.23
 
 require (
 	github.com/prometheus/prometheus v0.301.0
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/negroni v1.0.0
 )
