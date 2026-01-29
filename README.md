@@ -32,7 +32,7 @@ The proxy server can be configured using the following CLI flags:
 - `-upstream-auth`: Upstream authentication method. Supported values: `aws-sigv4`, `google-jwt`, `azure-oauth2`. (default "")
 - `-upstream-aws-region`: AWS region for SigV4 signing. (default "")
 - `-upstream-aws-service`: AWS service name for SigV4 signing. (default "aps")
-- `-upstream-aws-access-key-id`: AWS access key id for SigV4 signing. (default "")
+- `-upstream-aws-access-key-id`: AWS access key ID for SigV4 signing. (default "")
 - `-upstream-aws-secret-access-key`: AWS secret access key for SigV4 signing. (default "")
 - `-upstream-aws-session-token`: AWS session token for SigV4 signing. (default "")
 - `-upstream-google-service-account-file`: Google service account JSON for JWT signing. (default "")
