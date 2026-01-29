@@ -110,6 +110,11 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 	if req.GetBody != nil {
 		reader, err := req.GetBody()
 		if err != nil {
+			if req.Body != nil && req.Body != http.NoBody {
+				if closeErr := req.Body.Close(); closeErr != nil {
+					return nil, fmt.Errorf("close request body: %w", closeErr)
+				}
+			}
 			return nil, fmt.Errorf("read request body: %w", err)
 		}
 		defer reader.Close()
@@ -133,7 +138,6 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 	if closeErr != nil {
 		return nil, fmt.Errorf("close request body: %w", closeErr)
 	}
-	req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	return bodyBytes, nil
 }
 
