@@ -105,7 +105,7 @@ func (s *GoogleJWTSource) Token(ctx context.Context) (string, error) {
 	defer s.mu.Unlock()
 
 	now := s.now()
-	if s.token != "" && now.Add(googleJWTRefreshSkew).Before(s.expiry) {
+	if s.token != "" && now.Before(s.expiry.Add(-googleJWTRefreshSkew)) {
 		return s.token, nil
 	}
 
