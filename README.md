@@ -35,7 +35,7 @@ The proxy server can be configured using the following CLI flags:
 - `-upstream-aws-access-key-id`: AWS access key ID for SigV4 signing. (default "")
 - `-upstream-aws-secret-access-key`: AWS secret access key for SigV4 signing. (default "")
 - `-upstream-aws-session-token`: AWS session token for SigV4 signing. (default "")
-- `-upstream-google-service-account-file`: Google service account JSON for JWT signing. (default "")
+- `-upstream-google-service-account-file`: Path to a Google service account JSON file for JWT signing (typically the same file used by `GOOGLE_APPLICATION_CREDENTIALS`). (default "")
 - `-upstream-google-jwt-audience`: Google JWT audience. (default "")
 - `-upstream-google-jwt-ttl`: Google JWT time-to-live. (default "1h0m0s")
 - `-upstream-azure-tenant-id`: Azure tenant ID for OAuth2. (default "")
