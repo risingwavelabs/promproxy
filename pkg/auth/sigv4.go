@@ -117,6 +117,11 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read request body: %w", err)
 		}
+		if req.Body != nil && req.Body != http.NoBody {
+			if closeErr := req.Body.Close(); closeErr != nil {
+				return nil, fmt.Errorf("close request body: %w", closeErr)
+			}
+		}
 		return body, nil
 	}
 
