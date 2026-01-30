@@ -71,6 +71,9 @@ func NewSigV4Transport(next http.RoundTripper, cfg SigV4Config) (http.RoundTripp
 func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	creds, err := t.config.Credentials.Retrieve(req.Context())
 	if err != nil {
+		if closeErr := closeRequestBody(req); closeErr != nil {
+			return nil, closeErr
+		}
 		return nil, fmt.Errorf("retrieve aws credentials: %w", err)
 	}
 
@@ -116,18 +119,9 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 		return nil, nil
 	}
 	if req.GetBody != nil {
-		closeReqBody := func() error {
-			if req.Body != nil && req.Body != http.NoBody {
-				if closeErr := req.Body.Close(); closeErr != nil {
-					return fmt.Errorf("close request body: %w", closeErr)
-				}
-			}
-			return nil
-		}
-
 		reader, err := req.GetBody()
 		if err != nil {
-			if closeErr := closeReqBody(); closeErr != nil {
+			if closeErr := closeRequestBody(req); closeErr != nil {
 				return nil, closeErr
 			}
 			return nil, fmt.Errorf("get request body: %w", err)
@@ -136,18 +130,18 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 		body, err := io.ReadAll(reader)
 		closeReaderErr := reader.Close()
 		if err != nil {
-			if closeErr := closeReqBody(); closeErr != nil {
+			if closeErr := closeRequestBody(req); closeErr != nil {
 				return nil, closeErr
 			}
 			return nil, fmt.Errorf("read request body: %w", err)
 		}
 		if closeReaderErr != nil {
-			if closeErr := closeReqBody(); closeErr != nil {
+			if closeErr := closeRequestBody(req); closeErr != nil {
 				return nil, closeErr
 			}
-			return nil, fmt.Errorf("get request body: %w", closeReaderErr)
+			return nil, fmt.Errorf("close request body: %w", closeReaderErr)
 		}
-		if closeErr := closeReqBody(); closeErr != nil {
+		if closeErr := closeRequestBody(req); closeErr != nil {
 			return nil, closeErr
 		}
 		return body, nil
@@ -156,12 +150,24 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 	bodyBytes, err := io.ReadAll(req.Body)
 	closeErr := req.Body.Close()
 	if err != nil {
+		if closeErr != nil {
+			return nil, fmt.Errorf("read request body: %w", errors.Join(err, closeErr))
+		}
 		return nil, fmt.Errorf("read request body: %w", err)
 	}
 	if closeErr != nil {
 		return nil, fmt.Errorf("close request body: %w", closeErr)
 	}
 	return bodyBytes, nil
+}
+
+func closeRequestBody(req *http.Request) error {
+	if req.Body != nil && req.Body != http.NoBody {
+		if closeErr := req.Body.Close(); closeErr != nil {
+			return fmt.Errorf("close request body: %w", closeErr)
+		}
+	}
+	return nil
 }
 
 func hashSHA256Hex(payload []byte) string {
