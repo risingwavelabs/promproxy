@@ -30,11 +30,12 @@ import (
 
 // SigV4Config controls AWS SigV4 signing behavior.
 type SigV4Config struct {
-	Region      string
-	Service     string
-	Credentials aws.CredentialsProvider
-	Signer      v4.HTTPSigner
-	Now         func() time.Time
+	Region       string
+	Service      string
+	Credentials  aws.CredentialsProvider
+	Signer       v4.HTTPSigner
+	Now          func() time.Time
+	MaxBodyBytes int64
 }
 
 type sigV4Transport struct {
@@ -71,13 +72,14 @@ func NewSigV4Transport(next http.RoundTripper, cfg SigV4Config) (http.RoundTripp
 func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	creds, err := t.config.Credentials.Retrieve(req.Context())
 	if err != nil {
+		credsErr := fmt.Errorf("retrieve aws credentials: %w", err)
 		if closeErr := closeRequestBody(req); closeErr != nil {
-			return nil, closeErr
+			return nil, errors.Join(credsErr, closeErr)
 		}
-		return nil, fmt.Errorf("retrieve aws credentials: %w", err)
+		return nil, credsErr
 	}
 
-	bodyBytes, err := readRequestBody(req)
+	bodyBytes, err := readRequestBody(req, t.config.MaxBodyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +116,7 @@ func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.next.RoundTrip(reqCopy)
 }
 
-func readRequestBody(req *http.Request) ([]byte, error) {
+func readRequestBody(req *http.Request, maxBytes int64) ([]byte, error) {
 	if req.Body == nil || req.Body == http.NoBody {
 		return nil, nil
 	}
@@ -122,24 +124,28 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 		reader, err := req.GetBody()
 		if err != nil {
 			if closeErr := closeRequestBody(req); closeErr != nil {
-				return nil, closeErr
+				return nil, errors.Join(fmt.Errorf("get request body: %w", err), closeErr)
 			}
 			return nil, fmt.Errorf("get request body: %w", err)
 		}
 
-		body, err := io.ReadAll(reader)
+		body, err := readAllWithLimit(reader, maxBytes)
 		closeReaderErr := reader.Close()
 		if err != nil {
-			if closeErr := closeRequestBody(req); closeErr != nil {
-				return nil, closeErr
+			errs := []error{err}
+			if closeReaderErr != nil {
+				errs = append(errs, fmt.Errorf("close get body reader: %w", closeReaderErr))
 			}
-			return nil, fmt.Errorf("read request body: %w", err)
+			if closeErr := closeRequestBody(req); closeErr != nil {
+				errs = append(errs, closeErr)
+			}
+			return nil, errors.Join(errs...)
 		}
 		if closeReaderErr != nil {
 			if closeErr := closeRequestBody(req); closeErr != nil {
-				return nil, closeErr
+				return nil, errors.Join(fmt.Errorf("close get body reader: %w", closeReaderErr), closeErr)
 			}
-			return nil, fmt.Errorf("close request body: %w", closeReaderErr)
+			return nil, fmt.Errorf("close get body reader: %w", closeReaderErr)
 		}
 		if closeErr := closeRequestBody(req); closeErr != nil {
 			return nil, closeErr
@@ -147,18 +153,38 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 		return body, nil
 	}
 
-	bodyBytes, err := io.ReadAll(req.Body)
+	bodyBytes, err := readAllWithLimit(req.Body, maxBytes)
 	closeErr := req.Body.Close()
 	if err != nil {
 		if closeErr != nil {
-			return nil, fmt.Errorf("read request body: %w", errors.Join(err, closeErr))
+			return nil, errors.Join(err, fmt.Errorf("close request body: %w", closeErr))
 		}
-		return nil, fmt.Errorf("read request body: %w", err)
+		return nil, err
 	}
 	if closeErr != nil {
 		return nil, fmt.Errorf("close request body: %w", closeErr)
 	}
 	return bodyBytes, nil
+}
+
+func readAllWithLimit(reader io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		body, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, fmt.Errorf("read request body: %w", err)
+		}
+		return body, nil
+	}
+
+	limited := io.LimitReader(reader, maxBytes+1)
+	body, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, fmt.Errorf("read request body: %w", err)
+	}
+	if int64(len(body)) > maxBytes {
+		return nil, fmt.Errorf("request body exceeds %d bytes", maxBytes)
+	}
+	return body, nil
 }
 
 func closeRequestBody(req *http.Request) error {

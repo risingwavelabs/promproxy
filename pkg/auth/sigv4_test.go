@@ -169,6 +169,25 @@ func TestSigV4TransportHandlesNilHeader(t *testing.T) {
 	require.Contains(t, gotAuth, "AWS4-HMAC-SHA256")
 }
 
+func TestSigV4TransportRejectsLargeBody(t *testing.T) {
+	transport, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return emptyResponse(), nil
+	}), SigV4Config{
+		Region:       "us-east-1",
+		Service:      "aps",
+		Credentials:  aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")),
+		MaxBodyBytes: 4,
+	})
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, "https://aps.example.com/api/v1/query", strings.NewReader("12345"))
+	require.NoError(t, err)
+
+	_, err = transport.RoundTrip(req)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "request body exceeds")
+}
+
 func TestSigV4TransportCredentialsError(t *testing.T) {
 	transport, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return emptyResponse(), nil
