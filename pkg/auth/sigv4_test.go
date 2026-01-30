@@ -66,6 +66,49 @@ func (r errReadCloser) Close() error {
 	return nil
 }
 
+func TestSigV4TransportConfigValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     SigV4Config
+		wantErr string
+	}{
+		{
+			name: "missing credentials",
+			cfg: SigV4Config{
+				Region:  "us-east-1",
+				Service: "aps",
+			},
+			wantErr: "aws credentials provider is required",
+		},
+		{
+			name: "missing region",
+			cfg: SigV4Config{
+				Service:     "aps",
+				Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")),
+			},
+			wantErr: "aws region is required",
+		},
+		{
+			name: "missing service",
+			cfg: SigV4Config{
+				Region:      "us-east-1",
+				Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")),
+			},
+			wantErr: "aws service is required",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return emptyResponse(), nil
+			}), test.cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), test.wantErr)
+		})
+	}
+}
+
 func TestSigV4TransportSignsRequests(t *testing.T) {
 	fixedTime := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
 

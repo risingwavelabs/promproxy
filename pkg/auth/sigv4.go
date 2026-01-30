@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,13 +45,13 @@ type sigV4Transport struct {
 // NewSigV4Transport returns a RoundTripper that signs requests with AWS SigV4.
 func NewSigV4Transport(next http.RoundTripper, cfg SigV4Config) (http.RoundTripper, error) {
 	if cfg.Credentials == nil {
-		return nil, fmt.Errorf("aws credentials provider is required")
+		return nil, errors.New("aws credentials provider is required")
 	}
 	if cfg.Region == "" {
-		return nil, fmt.Errorf("aws region is required")
+		return nil, errors.New("aws region is required")
 	}
 	if cfg.Service == "" {
-		return nil, fmt.Errorf("aws service is required")
+		return nil, errors.New("aws service is required")
 	}
 	if cfg.Signer == nil {
 		cfg.Signer = v4.NewSigner()
@@ -115,29 +116,39 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 		return nil, nil
 	}
 	if req.GetBody != nil {
+		closeReqBody := func() error {
+			if req.Body != nil && req.Body != http.NoBody {
+				if closeErr := req.Body.Close(); closeErr != nil {
+					return fmt.Errorf("close request body: %w", closeErr)
+				}
+			}
+			return nil
+		}
+
 		reader, err := req.GetBody()
 		if err != nil {
-			if req.Body != nil && req.Body != http.NoBody {
-				if closeErr := req.Body.Close(); closeErr != nil {
-					return nil, fmt.Errorf("close request body: %w", closeErr)
-				}
+			if closeErr := closeReqBody(); closeErr != nil {
+				return nil, closeErr
 			}
-			return nil, fmt.Errorf("read request body: %w", err)
+			return nil, fmt.Errorf("get request body: %w", err)
 		}
-		defer reader.Close()
+
 		body, err := io.ReadAll(reader)
+		closeReaderErr := reader.Close()
 		if err != nil {
-			if req.Body != nil && req.Body != http.NoBody {
-				if closeErr := req.Body.Close(); closeErr != nil {
-					return nil, fmt.Errorf("close request body: %w", closeErr)
-				}
+			if closeErr := closeReqBody(); closeErr != nil {
+				return nil, closeErr
 			}
 			return nil, fmt.Errorf("read request body: %w", err)
 		}
-		if req.Body != nil && req.Body != http.NoBody {
-			if closeErr := req.Body.Close(); closeErr != nil {
-				return nil, fmt.Errorf("close request body: %w", closeErr)
+		if closeReaderErr != nil {
+			if closeErr := closeReqBody(); closeErr != nil {
+				return nil, closeErr
 			}
+			return nil, fmt.Errorf("get request body: %w", closeReaderErr)
+		}
+		if closeErr := closeReqBody(); closeErr != nil {
+			return nil, closeErr
 		}
 		return body, nil
 	}
