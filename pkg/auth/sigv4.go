@@ -80,6 +80,9 @@ func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	reqCopy := req.Clone(req.Context())
 	reqCopy.Header = reqCopy.Header.Clone()
+	if reqCopy.Header == nil {
+		reqCopy.Header = make(http.Header)
+	}
 	if reqCopy.Body != nil && reqCopy.Body != http.NoBody {
 		reqCopy.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		reqCopy.ContentLength = int64(len(bodyBytes))

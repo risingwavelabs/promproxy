@@ -102,6 +102,30 @@ func TestSigV4TransportSignsRequests(t *testing.T) {
 	require.Equal(t, "query=up", gotBody)
 }
 
+func TestSigV4TransportHandlesNilHeader(t *testing.T) {
+	fixedTime := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
+
+	var gotAuth string
+	transport, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		gotAuth = req.Header.Get("Authorization")
+		return emptyResponse(), nil
+	}), SigV4Config{
+		Region:      "us-east-1",
+		Service:     "aps",
+		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")),
+		Now:         func() time.Time { return fixedTime },
+	})
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, "https://aps.example.com/api/v1/query", nil)
+	require.NoError(t, err)
+	req.Header = nil
+
+	_, err = transport.RoundTrip(req)
+	require.NoError(t, err)
+	require.Contains(t, gotAuth, "AWS4-HMAC-SHA256")
+}
+
 func TestSigV4TransportCredentialsError(t *testing.T) {
 	transport, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return emptyResponse(), nil
