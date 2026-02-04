@@ -87,7 +87,7 @@ func (p *Proxy) handleKeys(writer http.ResponseWriter, request *http.Request) {
 	h := &handler{
 		upstreamEndpoint: p.upstreamEndpoint,
 		upstream:         p.upstream,
-		labelMatchers:    append(p.labelMatchers, matchers...),
+		labelMatchers:    append(append([]*labels.Matcher{}, p.labelMatchers...), matchers...),
 	}
 
 	http.StripPrefix(p.valuesPrefix(values), p.subMux).ServeHTTP(
