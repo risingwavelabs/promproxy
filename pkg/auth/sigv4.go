@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"time"
 
@@ -119,38 +120,6 @@ func readRequestBody(req *http.Request, maxBytes int64) ([]byte, error) {
 	if req.Body == nil || req.Body == http.NoBody {
 		return nil, nil
 	}
-	if req.GetBody != nil {
-		reader, err := req.GetBody()
-		if err != nil {
-			if closeErr := closeRequestBody(req); closeErr != nil {
-				return nil, errors.Join(fmt.Errorf("get request body: %w", err), closeErr)
-			}
-			return nil, fmt.Errorf("get request body: %w", err)
-		}
-
-		body, err := readAllWithLimit(reader, maxBytes)
-		closeReaderErr := reader.Close()
-		if err != nil {
-			errs := []error{err}
-			if closeReaderErr != nil {
-				errs = append(errs, fmt.Errorf("close get body reader: %w", closeReaderErr))
-			}
-			if closeErr := closeRequestBody(req); closeErr != nil {
-				errs = append(errs, closeErr)
-			}
-			return nil, errors.Join(errs...)
-		}
-		if closeReaderErr != nil {
-			if closeErr := closeRequestBody(req); closeErr != nil {
-				return nil, errors.Join(fmt.Errorf("close get body reader: %w", closeReaderErr), closeErr)
-			}
-			return nil, fmt.Errorf("close get body reader: %w", closeReaderErr)
-		}
-		if closeErr := closeRequestBody(req); closeErr != nil {
-			return nil, closeErr
-		}
-		return body, nil
-	}
 
 	bodyBytes, err := readAllWithLimit(req.Body, maxBytes)
 	closeErr := req.Body.Close()
@@ -166,10 +135,8 @@ func readRequestBody(req *http.Request, maxBytes int64) ([]byte, error) {
 	return bodyBytes, nil
 }
 
-const maxInt64 = int64(^uint64(0) >> 1)
-
 func readAllWithLimit(reader io.Reader, maxBytes int64) ([]byte, error) {
-	if maxBytes <= 0 || maxBytes >= maxInt64 {
+	if maxBytes <= 0 || maxBytes >= math.MaxInt64 {
 		body, err := io.ReadAll(reader)
 		if err != nil {
 			return nil, fmt.Errorf("read request body: %w", err)
