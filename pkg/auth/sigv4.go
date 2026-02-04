@@ -52,10 +52,10 @@ type SigV4Config struct {
 	MaxBodyBytes int64
 }
 
-	type sigV4Transport struct {
-		next   http.RoundTripper
-		config SigV4Config
-	}
+type sigV4Transport struct {
+	next   http.RoundTripper
+	config SigV4Config
+}
 
 const defaultMaxBodyBytes int64 = 32 << 20
 
