@@ -25,7 +25,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -210,13 +210,13 @@ func newProxy() (*proxy.Proxy, error) {
 		}
 	}
 	if upstreamTLS {
-		cert, err := tls.LoadX509KeyPair(path.Join(upstreamTLSCertDir, "tls.crt"), path.Join(upstreamTLSCertDir, "tls.key"))
+		cert, err := tls.LoadX509KeyPair(filepath.Join(upstreamTLSCertDir, "tls.crt"), filepath.Join(upstreamTLSCertDir, "tls.key"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to load client certificate: %w", err)
 		}
 
 		caPool := x509.NewCertPool()
-		caCert, err := os.ReadFile(path.Join(upstreamTLSCertDir, "ca.crt"))
+		caCert, err := os.ReadFile(filepath.Join(upstreamTLSCertDir, "ca.crt"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to load CA certificate: %w", err)
 		}
@@ -322,7 +322,7 @@ func newProxy() (*proxy.Proxy, error) {
 
 	var keys []string
 	if isolationKeys != "" {
-		keys = strings.Split(isolationKeys, ",")
+		keys = splitCommaSeparated(isolationKeys)
 	}
 	return proxy.NewProxy(upstreamEndpoint, &client, keys, lm), nil
 }
