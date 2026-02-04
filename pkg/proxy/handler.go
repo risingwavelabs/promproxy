@@ -16,6 +16,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -57,19 +58,19 @@ func (h *handler) httpDo(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (h *handler) getValuesFromRequest(r *http.Request) url.Values {
+func (h *handler) getValuesFromRequest(r *http.Request) (url.Values, int, error) {
 	switch r.Method {
 	case http.MethodGet:
-		return r.URL.Query()
+		return r.URL.Query(), 0, nil
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
-			return nil
+			return nil, http.StatusBadRequest, fmt.Errorf("parse form: %w", err)
 		}
 		v := r.URL.Query()
 		maps.Insert(v, maps.All(r.PostForm))
-		return v
+		return v, 0, nil
 	}
-	return nil
+	return nil, http.StatusMethodNotAllowed, fmt.Errorf("method %s not allowed", r.Method)
 }
 
 func (h *handler) newRequest(ctx context.Context, method string, url string, header http.Header, values url.Values) (*http.Request, error) {
@@ -95,7 +96,11 @@ func (h *handler) newRequest(ctx context.Context, method string, url string, hea
 }
 
 func (h *handler) proxyQuery(w http.ResponseWriter, r *http.Request) {
-	values := h.getValuesFromRequest(r)
+	values, status, err := h.getValuesFromRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
 
 	if !values.Has("query") {
 		http.Error(w, "query not provided", http.StatusBadRequest)
@@ -139,7 +144,11 @@ func (h *handler) proxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) proxyMatchesSeriesSelector(w http.ResponseWriter, r *http.Request) {
-	values := h.getValuesFromRequest(r)
+	values, status, err := h.getValuesFromRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
 
 	// Rewrite the match[] query parameter with the label matchers.
 	if values.Has("match[]") {
@@ -168,7 +177,11 @@ func (h *handler) proxyMatchesSeriesSelector(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *handler) proxyMatchTarget(w http.ResponseWriter, r *http.Request) {
-	values := h.getValuesFromRequest(r)
+	values, status, err := h.getValuesFromRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
 
 	// Rewrite the match_target query parameter with the label matchers.
 	if values.Has("match_target") {
