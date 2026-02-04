@@ -31,11 +31,23 @@ import (
 
 // SigV4Config controls AWS SigV4 signing behavior.
 type SigV4Config struct {
-	Region       string
-	Service      string
-	Credentials  aws.CredentialsProvider
-	Signer       v4.HTTPSigner
-	Now          func() time.Time
+	// Region is the AWS region to sign against (for example, "us-east-1").
+	// It must be non-empty; NewSigV4Transport returns an error when empty.
+	Region string
+	// Service is the AWS service name to sign against (for example, "es" or "s3").
+	// It must be non-empty; NewSigV4Transport returns an error when empty.
+	Service string
+	// Credentials provides AWS credentials used for signing. It must be non-nil.
+	Credentials aws.CredentialsProvider
+	// Signer is the SigV4 signer implementation. If nil, NewSigV4Transport
+	// defaults to v4.NewSigner().
+	Signer v4.HTTPSigner
+	// Now provides the signing timestamp. If nil, NewSigV4Transport defaults
+	// to time.Now. Useful for tests or deterministic signing.
+	Now func() time.Time
+	// MaxBodyBytes limits how many bytes may be read from req.Body for signing.
+	// A value <= 0 or >= math.MaxInt64 means "no limit". If the request body
+	// exceeds MaxBodyBytes, RoundTrip returns an error before signing.
 	MaxBodyBytes int64
 }
 
