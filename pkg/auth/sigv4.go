@@ -56,6 +56,14 @@ type sigV4Transport struct {
 	config SigV4Config
 }
 
+type bodyMode int
+
+const (
+	bodyModeNone bodyMode = iota
+	bodyModeBuffered
+	bodyModeGetBody
+)
+
 // NewSigV4Transport returns a RoundTripper that signs requests with AWS SigV4.
 func NewSigV4Transport(next http.RoundTripper, cfg SigV4Config) (http.RoundTripper, error) {
 	if cfg.Credentials == nil {
@@ -92,7 +100,7 @@ func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, credsErr
 	}
 
-	bodyBytes, err := readRequestBody(req, t.config.MaxBodyBytes)
+	payloadHash, bodyBytes, mode, err := payloadHashAndBody(req, t.config.MaxBodyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -101,19 +109,26 @@ func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if reqCopy.Header == nil {
 		reqCopy.Header = make(http.Header)
 	}
-	if reqCopy.Body != nil && reqCopy.Body != http.NoBody {
+	switch mode {
+	case bodyModeNone:
+		reqCopy.Body = http.NoBody
+		reqCopy.ContentLength = 0
+		reqCopy.GetBody = nil
+	case bodyModeBuffered:
 		reqCopy.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		reqCopy.ContentLength = int64(len(bodyBytes))
 		reqCopy.GetBody = func() (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
 		}
-	} else {
-		reqCopy.Body = http.NoBody
-		reqCopy.ContentLength = 0
-		reqCopy.GetBody = nil
+	case bodyModeGetBody:
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, fmt.Errorf("get request body: %w", err)
+		}
+		reqCopy.Body = body
+		reqCopy.GetBody = req.GetBody
 	}
 
-	payloadHash := hashSHA256Hex(bodyBytes)
 	if err := t.config.Signer.SignHTTP(
 		req.Context(),
 		creds,
@@ -126,6 +141,33 @@ func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("sign aws request: %w", err)
 	}
 	return t.next.RoundTrip(reqCopy)
+}
+
+func payloadHashAndBody(req *http.Request, maxBytes int64) (string, []byte, bodyMode, error) {
+	if req.Body == nil || req.Body == http.NoBody {
+		return hashSHA256Hex(nil), nil, bodyModeNone, nil
+	}
+
+	if req.GetBody != nil {
+		payloadHash, err := hashRequestBodyFromGetBody(req.GetBody, maxBytes)
+		closeErr := closeRequestBody(req)
+		if err != nil {
+			if closeErr != nil {
+				return "", nil, bodyModeNone, errors.Join(err, closeErr)
+			}
+			return "", nil, bodyModeNone, err
+		}
+		if closeErr != nil {
+			return "", nil, bodyModeNone, closeErr
+		}
+		return payloadHash, nil, bodyModeGetBody, nil
+	}
+
+	bodyBytes, err := readRequestBody(req, maxBytes)
+	if err != nil {
+		return "", nil, bodyModeNone, err
+	}
+	return hashSHA256Hex(bodyBytes), bodyBytes, bodyModeBuffered, nil
 }
 
 func readRequestBody(req *http.Request, maxBytes int64) ([]byte, error) {
@@ -147,6 +189,26 @@ func readRequestBody(req *http.Request, maxBytes int64) ([]byte, error) {
 	return bodyBytes, nil
 }
 
+func hashRequestBodyFromGetBody(getBody func() (io.ReadCloser, error), maxBytes int64) (string, error) {
+	reader, err := getBody()
+	if err != nil {
+		return "", fmt.Errorf("get request body: %w", err)
+	}
+
+	payloadHash, readErr := hashReaderWithLimit(reader, maxBytes)
+	closeErr := reader.Close()
+	if readErr != nil {
+		if closeErr != nil {
+			return "", errors.Join(readErr, fmt.Errorf("close get body reader: %w", closeErr))
+		}
+		return "", readErr
+	}
+	if closeErr != nil {
+		return "", fmt.Errorf("close get body reader: %w", closeErr)
+	}
+	return payloadHash, nil
+}
+
 func readAllWithLimit(reader io.Reader, maxBytes int64) ([]byte, error) {
 	if maxBytes <= 0 || maxBytes >= math.MaxInt64 {
 		body, err := io.ReadAll(reader)
@@ -165,6 +227,26 @@ func readAllWithLimit(reader io.Reader, maxBytes int64) ([]byte, error) {
 		return nil, fmt.Errorf("request body exceeds %d bytes", maxBytes)
 	}
 	return body, nil
+}
+
+func hashReaderWithLimit(reader io.Reader, maxBytes int64) (string, error) {
+	hasher := sha256.New()
+	if maxBytes <= 0 || maxBytes >= math.MaxInt64 {
+		if _, err := io.Copy(hasher, reader); err != nil {
+			return "", fmt.Errorf("read request body: %w", err)
+		}
+		return hex.EncodeToString(hasher.Sum(nil)), nil
+	}
+
+	limited := io.LimitReader(reader, maxBytes+1)
+	written, err := io.Copy(hasher, limited)
+	if err != nil {
+		return "", fmt.Errorf("read request body: %w", err)
+	}
+	if written > maxBytes {
+		return "", fmt.Errorf("request body exceeds %d bytes", maxBytes)
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 func closeRequestBody(req *http.Request) error {

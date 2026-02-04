@@ -66,6 +66,21 @@ func (r errReadCloser) Close() error {
 	return nil
 }
 
+type trackingReadCloser struct {
+	readCalled  bool
+	closeCalled bool
+}
+
+func (r *trackingReadCloser) Read(p []byte) (int, error) {
+	r.readCalled = true
+	return 0, errors.New("unexpected read")
+}
+
+func (r *trackingReadCloser) Close() error {
+	r.closeCalled = true
+	return nil
+}
+
 func TestSigV4TransportConfigValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -186,6 +201,42 @@ func TestSigV4TransportRejectsLargeBody(t *testing.T) {
 	_, err = transport.RoundTrip(req)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "request body exceeds")
+}
+
+func TestSigV4TransportUsesGetBodyWhenAvailable(t *testing.T) {
+	fixedTime := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
+
+	var gotBody string
+	transport, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		gotBody = string(body)
+		return emptyResponse(), nil
+	}), SigV4Config{
+		Region:      "us-east-1",
+		Service:     "aps",
+		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")),
+		Now:         func() time.Time { return fixedTime },
+	})
+	require.NoError(t, err)
+
+	trackedBody := &trackingReadCloser{}
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"https://aps.example.com/api/v1/query",
+		trackedBody,
+	)
+	require.NoError(t, err)
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("query=up")), nil
+	}
+	req.ContentLength = int64(len("query=up"))
+
+	_, err = transport.RoundTrip(req)
+	require.NoError(t, err)
+	require.Equal(t, "query=up", gotBody)
+	require.False(t, trackedBody.readCalled)
+	require.True(t, trackedBody.closeCalled)
 }
 
 func TestSigV4TransportCredentialsError(t *testing.T) {
