@@ -1,4 +1,4 @@
-// Copyright 2025 RisingWave Labs.
+// Copyright 2025-2026 RisingWave Labs.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,13 +21,19 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"path"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/risingwavelabs/promproxy/pkg/auth"
 	"github.com/risingwavelabs/promproxy/pkg/proxy"
 )
 
@@ -39,6 +45,23 @@ var (
 	upstreamTLSCertDir string
 	labelMatchers      string
 	printAccessLog     bool
+	upstreamAuth       string
+
+	upstreamAWSRegion          string
+	upstreamAWSService         string
+	upstreamAWSAccessKeyID     string
+	upstreamAWSSecretAccessKey string
+	upstreamAWSSessionToken    string
+
+	upstreamGoogleServiceAccountFile string
+	upstreamGoogleJWTAudience        string
+	upstreamGoogleJWTTTL             time.Duration
+
+	upstreamAzureTenantID     string
+	upstreamAzureClientID     string
+	upstreamAzureClientSecret string
+	upstreamAzureScopes       string
+	upstreamAzureTokenURL     string
 )
 
 func init() {
@@ -49,6 +72,118 @@ func init() {
 	flag.StringVar(&labelMatchers, "label-matchers", "", "label matchers to apply to all queries")
 	flag.BoolVar(&printAccessLog, "print-access-log", false, "print access log")
 	flag.StringVar(&isolationKeys, "isolation-keys", "", "keys to isolate on, separated by commas")
+	flag.StringVar(&upstreamAuth, "upstream-auth", "", "upstream auth method: aws-sigv4, google-jwt, azure-oauth2")
+
+	flag.StringVar(
+		&upstreamAWSRegion,
+		"upstream-aws-region",
+		"",
+		"AWS region for SigV4 signing (AWS_REGION or AWS_DEFAULT_REGION)",
+	)
+	flag.StringVar(&upstreamAWSService, "upstream-aws-service", "aps", "AWS service name for SigV4 signing")
+	flag.StringVar(
+		&upstreamAWSAccessKeyID,
+		"upstream-aws-access-key-id",
+		"",
+		"AWS access key ID for SigV4 signing (or AWS_ACCESS_KEY_ID)",
+	)
+	flag.StringVar(
+		&upstreamAWSSecretAccessKey,
+		"upstream-aws-secret-access-key",
+		"",
+		"AWS secret access key for SigV4 signing (or AWS_SECRET_ACCESS_KEY). WARNING: passing secrets via command-line flags can expose them via process listings and shell history; prefer environment variables or credential files.",
+	)
+	flag.StringVar(
+		&upstreamAWSSessionToken,
+		"upstream-aws-session-token",
+		"",
+		"AWS session token for SigV4 signing (or AWS_SESSION_TOKEN)",
+	)
+
+	flag.StringVar(
+		&upstreamGoogleServiceAccountFile,
+		"upstream-google-service-account-file",
+		"",
+		"Path to Google service account JSON file for JWT signing (or GOOGLE_APPLICATION_CREDENTIALS)",
+	)
+	flag.StringVar(
+		&upstreamGoogleJWTAudience,
+		"upstream-google-jwt-audience",
+		"",
+		"Google JWT audience (or PROMPROXY_GOOGLE_JWT_AUDIENCE)",
+	)
+	flag.DurationVar(&upstreamGoogleJWTTTL, "upstream-google-jwt-ttl", time.Hour, "Google JWT TTL")
+
+	flag.StringVar(
+		&upstreamAzureTenantID,
+		"upstream-azure-tenant-id",
+		"",
+		"Azure tenant ID for OAuth2 (or AZURE_TENANT_ID)",
+	)
+	flag.StringVar(
+		&upstreamAzureClientID,
+		"upstream-azure-client-id",
+		"",
+		"Azure client ID for OAuth2 (or AZURE_CLIENT_ID)",
+	)
+	flag.StringVar(
+		&upstreamAzureClientSecret,
+		"upstream-azure-client-secret",
+		"",
+		"Azure client secret for OAuth2 (or AZURE_CLIENT_SECRET). WARNING: passing secrets via command-line flags can expose them via process listings and shell history; prefer environment variables or credential files.",
+	)
+	flag.StringVar(
+		&upstreamAzureScopes,
+		"upstream-azure-scopes",
+		"",
+		"Azure OAuth2 scopes, separated by commas (or AZURE_SCOPES)",
+	)
+	flag.StringVar(
+		&upstreamAzureTokenURL,
+		"upstream-azure-token-url",
+		"",
+		"Azure OAuth2 token URL override (or AZURE_TOKEN_URL)",
+	)
+}
+
+func applyEnvOverrides() {
+	if upstreamAWSRegion == "" {
+		if value := os.Getenv("AWS_REGION"); value != "" {
+			upstreamAWSRegion = value
+		} else if value := os.Getenv("AWS_DEFAULT_REGION"); value != "" {
+			upstreamAWSRegion = value
+		}
+	}
+	if upstreamAWSAccessKeyID == "" {
+		upstreamAWSAccessKeyID = os.Getenv("AWS_ACCESS_KEY_ID")
+	}
+	if upstreamAWSSecretAccessKey == "" {
+		upstreamAWSSecretAccessKey = os.Getenv("AWS_SECRET_ACCESS_KEY")
+	}
+	if upstreamAWSSessionToken == "" {
+		upstreamAWSSessionToken = os.Getenv("AWS_SESSION_TOKEN")
+	}
+	if upstreamGoogleServiceAccountFile == "" {
+		upstreamGoogleServiceAccountFile = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+	}
+	if upstreamGoogleJWTAudience == "" {
+		upstreamGoogleJWTAudience = os.Getenv("PROMPROXY_GOOGLE_JWT_AUDIENCE")
+	}
+	if upstreamAzureTenantID == "" {
+		upstreamAzureTenantID = os.Getenv("AZURE_TENANT_ID")
+	}
+	if upstreamAzureClientID == "" {
+		upstreamAzureClientID = os.Getenv("AZURE_CLIENT_ID")
+	}
+	if upstreamAzureClientSecret == "" {
+		upstreamAzureClientSecret = os.Getenv("AZURE_CLIENT_SECRET")
+	}
+	if upstreamAzureScopes == "" {
+		upstreamAzureScopes = os.Getenv("AZURE_SCOPES")
+	}
+	if upstreamAzureTokenURL == "" {
+		upstreamAzureTokenURL = os.Getenv("AZURE_TOKEN_URL")
+	}
 }
 
 func newProxy() (*proxy.Proxy, error) {
@@ -57,15 +192,31 @@ func newProxy() (*proxy.Proxy, error) {
 		return nil, err
 	}
 
-	var client http.Client
+	var baseTransport *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok && dt != nil {
+		baseTransport = dt.Clone()
+	} else {
+		baseTransport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: time.Second,
+		}
+	}
 	if upstreamTLS {
-		cert, err := tls.LoadX509KeyPair(path.Join(upstreamTLSCertDir, "tls.crt"), path.Join(upstreamTLSCertDir, "tls.key"))
+		cert, err := tls.LoadX509KeyPair(filepath.Join(upstreamTLSCertDir, "tls.crt"), filepath.Join(upstreamTLSCertDir, "tls.key"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to load client certificate: %w", err)
 		}
 
 		caPool := x509.NewCertPool()
-		caCert, err := os.ReadFile(path.Join(upstreamTLSCertDir, "ca.crt"))
+		caCert, err := os.ReadFile(filepath.Join(upstreamTLSCertDir, "ca.crt"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to load CA certificate: %w", err)
 		}
@@ -74,23 +225,162 @@ func newProxy() (*proxy.Proxy, error) {
 			return nil, errors.New("failed to parse server CA cert")
 		}
 
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				Certificates: []tls.Certificate{cert},
-				RootCAs:      caPool,
-			},
+		baseTransport.TLSClientConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			RootCAs:      caPool,
 		}
+	}
+
+	var transport http.RoundTripper = baseTransport
+	if upstreamAuth != "" {
+		switch upstreamAuth {
+		case "aws-sigv4":
+			cfg, err := loadAWSConfig(context.Background())
+			if err != nil {
+				return nil, err
+			}
+			sigV4Transport, err := auth.NewSigV4Transport(transport, auth.SigV4Config{
+				Region:      cfg.Region,
+				Service:     upstreamAWSService,
+				Credentials: cfg.Credentials,
+			})
+			if err != nil {
+				return nil, err
+			}
+			transport = sigV4Transport
+		case "google-jwt":
+			if upstreamGoogleServiceAccountFile == "" {
+				return nil, fmt.Errorf(
+					"upstream-auth=google-jwt requires -upstream-google-service-account-file or GOOGLE_APPLICATION_CREDENTIALS to be set",
+				)
+			}
+			if upstreamGoogleJWTAudience == "" {
+				return nil, fmt.Errorf(
+					"upstream-auth=google-jwt requires -upstream-google-jwt-audience or PROMPROXY_GOOGLE_JWT_AUDIENCE to be set",
+				)
+			}
+			source, err := auth.NewGoogleJWTSourceFromFile(upstreamGoogleServiceAccountFile, auth.GoogleJWTConfig{
+				Audience: upstreamGoogleJWTAudience,
+				TTL:      upstreamGoogleJWTTTL,
+			})
+			if err != nil {
+				return nil, err
+			}
+			bearerTransport, err := auth.NewBearerTransport(transport, source)
+			if err != nil {
+				return nil, err
+			}
+			transport = bearerTransport
+		case "azure-oauth2":
+			if upstreamAzureTenantID == "" {
+				return nil, fmt.Errorf(
+					"upstream-auth=azure-oauth2 requires -upstream-azure-tenant-id or AZURE_TENANT_ID to be set",
+				)
+			}
+			if upstreamAzureClientID == "" {
+				return nil, fmt.Errorf(
+					"upstream-auth=azure-oauth2 requires -upstream-azure-client-id or AZURE_CLIENT_ID to be set",
+				)
+			}
+			if upstreamAzureClientSecret == "" {
+				return nil, fmt.Errorf(
+					"upstream-auth=azure-oauth2 requires -upstream-azure-client-secret or AZURE_CLIENT_SECRET to be set",
+				)
+			}
+			scopes := splitCommaSeparated(upstreamAzureScopes)
+			if len(scopes) == 0 {
+				return nil, fmt.Errorf(
+					"upstream-auth=azure-oauth2 requires -upstream-azure-scopes or AZURE_SCOPES to be set",
+				)
+			}
+			source, err := auth.NewAzureOAuth2Source(auth.AzureOAuth2Config{
+				TenantID:     upstreamAzureTenantID,
+				ClientID:     upstreamAzureClientID,
+				ClientSecret: upstreamAzureClientSecret,
+				Scopes:       scopes,
+				TokenURL:     upstreamAzureTokenURL,
+			})
+			if err != nil {
+				return nil, err
+			}
+			bearerTransport, err := auth.NewBearerTransport(transport, source)
+			if err != nil {
+				return nil, err
+			}
+			transport = bearerTransport
+		default:
+			return nil, fmt.Errorf(
+				"unsupported upstream auth %q; supported values are: aws-sigv4, google-jwt, azure-oauth2",
+				upstreamAuth,
+			)
+		}
+	}
+
+	client := http.Client{
+		Transport: transport,
 	}
 
 	var keys []string
 	if isolationKeys != "" {
-		keys = strings.Split(isolationKeys, ",")
+		keys = splitCommaSeparated(isolationKeys)
 	}
 	return proxy.NewProxy(upstreamEndpoint, &client, keys, lm), nil
 }
 
+func splitCommaSeparated(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func loadAWSConfig(ctx context.Context) (aws.Config, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	opts := []func(*config.LoadOptions) error{}
+	if upstreamAWSRegion != "" {
+		opts = append(opts, config.WithRegion(upstreamAWSRegion))
+	}
+
+	if upstreamAWSAccessKeyID != "" || upstreamAWSSecretAccessKey != "" || upstreamAWSSessionToken != "" {
+		if upstreamAWSAccessKeyID == "" || upstreamAWSSecretAccessKey == "" {
+			return aws.Config{}, errors.New(
+				"aws access key id and secret access key are required; configure them via -upstream-aws-access-key-id/-upstream-aws-secret-access-key flags or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY environment variables",
+			)
+		}
+		opts = append(opts, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			upstreamAWSAccessKeyID,
+			upstreamAWSSecretAccessKey,
+			upstreamAWSSessionToken,
+		)))
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		return aws.Config{}, fmt.Errorf("load aws config: %w", err)
+	}
+	if cfg.Region == "" {
+		return aws.Config{}, errors.New(
+			"aws region is required; specify it with the -upstream-aws-region flag or via AWS_REGION / AWS_DEFAULT_REGION environment variables",
+		)
+	}
+	return cfg, nil
+}
+
 func main() {
 	flag.Parse()
+	applyEnvOverrides()
 
 	p, err := newProxy()
 	if err != nil {
