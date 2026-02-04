@@ -43,7 +43,7 @@ type errSigner struct {
 
 func (s errSigner) SignHTTP(
 	ctx context.Context,
-	credentials aws.Credentials,
+	creds aws.Credentials,
 	r *http.Request,
 	payloadHash string,
 	service string,

@@ -46,15 +46,18 @@ type SigV4Config struct {
 	// to time.Now. Useful for tests or deterministic signing.
 	Now func() time.Time
 	// MaxBodyBytes limits how many bytes may be read from req.Body for signing.
-	// A value <= 0 or >= math.MaxInt64 means "no limit". If the request body
-	// exceeds MaxBodyBytes, RoundTrip returns an error before signing.
+	// A value of 0 uses the default limit (defaultMaxBodyBytes). Negative values
+	// or >= math.MaxInt64 mean "no limit". If the request body exceeds MaxBodyBytes,
+	// RoundTrip returns an error before signing.
 	MaxBodyBytes int64
 }
 
-type sigV4Transport struct {
-	next   http.RoundTripper
-	config SigV4Config
-}
+	type sigV4Transport struct {
+		next   http.RoundTripper
+		config SigV4Config
+	}
+
+const defaultMaxBodyBytes int64 = 32 << 20
 
 type bodyMode int
 
@@ -80,6 +83,9 @@ func NewSigV4Transport(next http.RoundTripper, cfg SigV4Config) (http.RoundTripp
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.MaxBodyBytes == 0 {
+		cfg.MaxBodyBytes = defaultMaxBodyBytes
 	}
 	if next == nil {
 		next = http.DefaultTransport
