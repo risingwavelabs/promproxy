@@ -138,7 +138,11 @@ func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		t.config.Region,
 		t.config.Now(),
 	); err != nil {
-		return nil, fmt.Errorf("sign aws request: %w", err)
+		signErr := fmt.Errorf("sign aws request: %w", err)
+		if closeErr := closeRequestBody(reqCopy); closeErr != nil {
+			return nil, errors.Join(signErr, closeErr)
+		}
+		return nil, signErr
 	}
 	return t.next.RoundTrip(reqCopy)
 }

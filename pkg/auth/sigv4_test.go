@@ -81,6 +81,20 @@ func (r *trackingReadCloser) Close() error {
 	return nil
 }
 
+type trackingBody struct {
+	reader *strings.Reader
+	closed bool
+}
+
+func (r *trackingBody) Read(p []byte) (int, error) {
+	return r.reader.Read(p)
+}
+
+func (r *trackingBody) Close() error {
+	r.closed = true
+	return nil
+}
+
 func TestSigV4TransportConfigValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -138,6 +152,9 @@ func TestSigV4TransportSignsRequests(t *testing.T) {
 		gotToken = req.Header.Get("X-Amz-Security-Token")
 		body, err := io.ReadAll(req.Body)
 		require.NoError(t, err)
+		if req.Body != nil && req.Body != http.NoBody {
+			require.NoError(t, req.Body.Close())
+		}
 		gotBody = string(body)
 		return emptyResponse(), nil
 	}), SigV4Config{
@@ -210,6 +227,9 @@ func TestSigV4TransportUsesGetBodyWhenAvailable(t *testing.T) {
 	transport, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		body, err := io.ReadAll(req.Body)
 		require.NoError(t, err)
+		if req.Body != nil && req.Body != http.NoBody {
+			require.NoError(t, req.Body.Close())
+		}
 		gotBody = string(body)
 		return emptyResponse(), nil
 	}), SigV4Config{
@@ -237,6 +257,38 @@ func TestSigV4TransportUsesGetBodyWhenAvailable(t *testing.T) {
 	require.Equal(t, "query=up", gotBody)
 	require.False(t, trackedBody.readCalled)
 	require.True(t, trackedBody.closeCalled)
+}
+
+func TestSigV4TransportSignerErrorClosesGetBody(t *testing.T) {
+	fixedTime := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
+
+	var bodies []*trackingBody
+	getBody := func() (io.ReadCloser, error) {
+		body := &trackingBody{reader: strings.NewReader("query=up")}
+		bodies = append(bodies, body)
+		return body, nil
+	}
+
+	transport, err := NewSigV4Transport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return emptyResponse(), nil
+	}), SigV4Config{
+		Region:      "us-east-1",
+		Service:     "aps",
+		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")),
+		Now:         func() time.Time { return fixedTime },
+		Signer:      errSigner{err: errors.New("sign failed")},
+	})
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, "https://aps.example.com/api/v1/query", strings.NewReader("query=up"))
+	require.NoError(t, err)
+	req.GetBody = getBody
+
+	_, err = transport.RoundTrip(req)
+	require.Error(t, err)
+	require.Len(t, bodies, 2)
+	require.True(t, bodies[0].closed)
+	require.True(t, bodies[1].closed)
 }
 
 func TestSigV4TransportCredentialsError(t *testing.T) {
