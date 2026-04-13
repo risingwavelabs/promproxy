@@ -24,8 +24,11 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func init() {
-	parser.EnableExperimentalFunctions = true
+// NewPromQLParser creates a new PromQL parser with experimental functions enabled.
+func NewPromQLParser() parser.Parser {
+	return parser.NewParser(parser.Options{
+		EnableExperimentalFunctions: true,
+	})
 }
 
 // matchesToStringIter returns an iterator that yields the string representation of each matcher.
@@ -47,7 +50,7 @@ func GetMatchExpr(matchers []*labels.Matcher) string {
 
 // RewriteQuery rewrites the given query with the given extra matchers.
 func RewriteQuery(query string, extraMatchers []*labels.Matcher) (string, error) {
-	ast, err := parser.ParseExpr(query)
+	ast, err := NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return "", err
 	}
@@ -66,7 +69,7 @@ func RewriteQuery(query string, extraMatchers []*labels.Matcher) (string, error)
 
 // FormatQuery formats the given query.
 func FormatQuery(query string) (string, error) {
-	ast, err := parser.ParseExpr(query)
+	ast, err := NewPromQLParser().ParseExpr(query)
 	if err != nil {
 		return "", err
 	}
