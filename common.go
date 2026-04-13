@@ -22,6 +22,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/risingwavelabs/promproxy/pkg/proxy"
 	"github.com/urfave/negroni"
 )
 
@@ -29,7 +30,7 @@ func parseMatchers(s string) ([]*labels.Matcher, error) {
 	if s == "" {
 		return nil, nil
 	}
-	expr, err := parser.ParseExpr("{" + s + "}")
+	expr, err := proxy.NewPromQLParser().ParseExpr("{" + s + "}")
 	if err != nil {
 		return nil, errors.New("invalid label matchers")
 	}
